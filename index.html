@@ -643,23 +643,22 @@ function showSync(msg) {
 function hideSync() { document.getElementById('sync-indicator').classList.remove('show'); }
 
 async function loadFromSupabase() {
-  if (!currentUser) return;
+  if (!currentUser) { console.log('No user, skipping load'); return; }
   showSync('⟳ Loading...');
+  console.log('Loading for user:', currentUser.id);
   try {
     const uid = currentUser.id;
-    const [t,r,h,g,sl,um] = await Promise.all([
-      supa.from('tasks').select('id,data').eq('user_id',uid),
-      supa.from('routines').select('id,data').eq('user_id',uid),
-      supa.from('habits').select('id,data').eq('user_id',uid),
-      supa.from('goals').select('id,data').eq('user_id',uid),
-      supa.from('sleep_logs').select('data').eq('user_id',uid).maybeSingle(),
-      supa.from('user_meta').select('data').eq('user_id',uid).maybeSingle(),
-    ]);
-    // Check for errors
-    if(t.error) throw new Error('tasks: '+t.error.message);
-    if(r.error) throw new Error('routines: '+r.error.message);
-    if(h.error) throw new Error('habits: '+h.error.message);
-    if(g.error) throw new Error('goals: '+g.error.message);
+    console.log('Querying tasks...');
+    const t = await supa.from('tasks').select('id,data').eq('user_id',uid);
+    console.log('Tasks result:', t.data?.length, 'error:', t.error?.message);
+    const r = await supa.from('routines').select('id,data').eq('user_id',uid);
+    console.log('Routines result:', r.data?.length, 'error:', r.error?.message);
+    const h = await supa.from('habits').select('id,data').eq('user_id',uid);
+    console.log('Habits result:', h.data?.length, 'error:', h.error?.message);
+    const g = await supa.from('goals').select('id,data').eq('user_id',uid);
+    console.log('Goals result:', g.data?.length, 'error:', g.error?.message);
+    const sl = await supa.from('sleep_logs').select('data').eq('user_id',uid).maybeSingle();
+    const um = await supa.from('user_meta').select('data').eq('user_id',uid).maybeSingle();
 
     tasks    = (t.data||[]).map(x=>x.data);
     routines = (r.data||[]).map(x=>x.data);
@@ -669,10 +668,8 @@ async function loadFromSupabase() {
     const meta = um.data?.data || {};
     streak  = meta.streak  || 0;
     lastDay = meta.lastDay || '';
-    // Migrate schema
     goals.forEach(g=>{if(!g.logs)g.logs=[];});
     habits.forEach(h=>{if(!h.entries)h.entries=[];});
-    // Cache to localStorage only (no re-sync to Supabase)
     S.set('lt3_tasks',tasks);
     S.set('lt3_routines',routines);
     S.set('lt3_habits',habits);
@@ -680,10 +677,10 @@ async function loadFromSupabase() {
     S.set('lt3_sleep',sleepLogs);
     S.set('lt3_streak',streak);
     S.set('lt3_lastday',lastDay);
-    console.log('Loaded from Supabase — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
+    console.log('Load complete — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
   } catch(e) {
-    console.error('Load error',e);
-    toast('Error loading data: '+e.message);
+    console.error('Load error:', e);
+    toast('Load error: '+e.message);
   }
   hideSync();
 }
@@ -2225,6 +2222,7 @@ async function initApp(user) {
 // Use onAuthStateChange as single source of truth
 // INITIAL_SESSION fires once on load with current session or null
 supa.auth.onAuthStateChange(async (event, session) => {
+  console.log('Auth event:', event, 'user:', session?.user?.email);
   if(event === 'SIGNED_OUT') {
     currentUser = null;
     tasks=[];routines=[];habits=[];goals=[];sleepLogs={};streak=0;lastDay='';
