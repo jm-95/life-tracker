@@ -216,13 +216,17 @@ textarea{resize:vertical;min-height:60px}
 .s-label:first-child{margin-top:0}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:1rem;margin-bottom:.75rem}
 /* JOURNAL */
-.journal-entry{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:1rem;margin-bottom:.75rem}
+.journal-entry{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:1rem;margin-bottom:.75rem;cursor:pointer;transition:border-color .15s}
+.journal-entry:hover{border-color:var(--border2)}
 .journal-entry-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.6rem}
 .journal-habit-name{font-size:12px;font-weight:600;color:var(--accent2);text-transform:uppercase;letter-spacing:.05em}
-.journal-date{font-size:11px;color:var(--text3);margin-top:2px}
-.journal-body{font-size:14px;color:var(--text);line-height:1.6}
+.journal-preview{font-size:13px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.journal-body{font-size:14px;color:var(--text);line-height:1.7}
 .journal-prompt-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:.6rem;margin-bottom:2px}
 .journal-prompt-label:first-child{margin-top:0}
+/* ENTRY READER MODAL */
+.entry-reader-modal{max-height:85vh;overflow-y:auto}
+.entry-reader-body{font-size:15px;color:var(--text);line-height:1.8;white-space:pre-wrap;word-break:break-word}
 /* ENTRY FORM FIELDS */
 .entry-field-wrap{margin-bottom:.75rem}
 .entry-field-wrap:last-child{margin-bottom:0}
@@ -479,6 +483,24 @@ textarea{resize:vertical;min-height:60px}
       <button class="icon-btn" onclick="closeGoalGraph()">✕</button>
     </div>
     <div id="goal-graph-content"></div>
+  </div>
+</div>
+
+<!-- JOURNAL ENTRY READER -->
+<div class="overlay" id="entry-reader-overlay" onclick="closeEntryReader()">
+  <div class="modal entry-reader-modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <div id="entry-reader-habit" style="font-size:12px;font-weight:600;color:var(--accent2);text-transform:uppercase;letter-spacing:.05em"></div>
+        <div id="entry-reader-date" style="font-size:12px;color:var(--text3);margin-top:2px"></div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <button class="icon-btn" id="entry-reader-edit" title="Edit">✎</button>
+        <button class="icon-btn" id="entry-reader-delete" title="Delete">🗑</button>
+        <button class="icon-btn" onclick="closeEntryReader()">✕</button>
+      </div>
+    </div>
+    <div id="entry-reader-body"></div>
   </div>
 </div>
 
@@ -1075,7 +1097,7 @@ function renderDashboard() {
   document.getElementById('dash-greeting').textContent = h<12?'Good morning ☀️':h<17?'Good afternoon 🌤':'Good evening 🌙';
   document.getElementById('dash-date').textContent = nowIST().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
   const wins = tasks.filter(t=>t.done).length + routines.filter(r=>r.lastDone===today()).length + habits.filter(h=>isHabitDoneToday(h)).length;
-  const overdueR = routines.filter(r=>isRoutineOverdue(r));
+  const pendingR = routines.filter(r=>!isRoutineDoneToday(r)&&(isRoutineDue(r)||isRoutineOverdue(r)));
   const dueT = tasks.filter(t=>!t.done&&t.due&&t.due<=today());
   const undatedT = tasks.filter(t=>!t.done&&!t.due);
   const pendH = habits.filter(h=>!isHabitDoneToday(h));
@@ -1112,7 +1134,7 @@ function renderDashboard() {
     if(items.length>3)s+=`<div style="font-size:13px;color:var(--text3);padding:.3rem 0">+${items.length-3} more</div>`;
     return s+'</div>';
   };
-  html+=sec('⚠ Overdue routines',overdueR,'red','routines',r=>r.room+' · '+routineFreqLabel(r));
+  html+=sec('↻ Routines to do',pendingR,'red','routines',r=>r.room+' · '+routineFreqLabel(r)+(isRoutineOverdue(r)?' · overdue':''));
   html+=sec('📋 Tasks due today',dueT,'amber','tasks',t=>'Due '+(t.due===today()?'today':t.due));
   html+=sec('◈ Habits pending',pendH,'blue','habits',h=>habitFreqLabel(h));
   html+=sec('◎ Goals close',nearG,'green','goals',g=>g.current+'/'+g.target+' '+esc(g.unit)+' ('+Math.round(g.current/g.target*100)+'%)');
@@ -1302,8 +1324,18 @@ function saveRoutine(){
 }
 function toggleRoutine(id){
   const r=routines.find(x=>x.id===id);if(!r)return;
-  if(isRoutineDoneToday(r)){r.lastDone=r.prevDone||null;toast('Marked pending');}
-  else{r.prevDone=r.lastDone;r.lastDone=today();toast('Done! 🎉');}
+  if(isRoutineDoneToday(r)){
+    // Undo — remove today from history
+    r.lastDone=r.prevDone||null;
+    r.history=(r.history||[]).filter(d=>d!==today());
+    toast('Marked pending');
+  } else {
+    r.prevDone=r.lastDone;
+    r.lastDone=today();
+    if(!r.history)r.history=[];
+    if(!r.history.includes(today()))r.history.push(today());
+    toast('Done! 🎉');
+  }
   updateRoutineStreak();saveRoutinesDB();renderRoutines();
 }
 function deleteRoutine(id){routines=routines.filter(x=>x.id!==id);saveRoutinesDB();renderRoutines();toast('Routine removed');}
@@ -1320,6 +1352,45 @@ function updateRoutineStreak(){
   }
 }
 function confirmNewDay(){openModal('New day?','Refresh routine due-states.',()=>{updateRoutineStreak();renderRoutines();toast('🌅 New day!');},'Start','btn-accent');}
+function routineCompletionStats(r) {
+  const history = r.history || (r.lastDone ? [r.lastDone] : []);
+  const interval = routineIntervalDays(r);
+  const start = new Date((r.startDate||r.created||today())+'T00:00:00');
+  const now = new Date(today()+'T00:00:00');
+  // Count expected completions since start
+  const daysSinceStart = Math.max(0, Math.floor((now-start)/86400000));
+  const expected = Math.max(1, Math.floor(daysSinceStart/interval)+1);
+  const done = history.length;
+  const rate = Math.min(100, Math.round(done/expected*100));
+  // Current streak — consecutive completions without missing a window
+  let streak = 0;
+  const sorted = [...history].sort((a,b)=>b>a?1:-1);
+  for(let i=0;i<sorted.length;i++){
+    if(i===0){ streak=1; continue; }
+    const gap=daysBetween(sorted[i],sorted[i-1]);
+    if(gap<=interval*1.5) streak++;
+    else break;
+  }
+  return {done, expected, rate, streak};
+}
+
+function buildRoutineGrid(r) {
+  // Show last 90 days as a dot-per-completion grid
+  const history = new Set(r.history||[]);
+  const interval = routineIntervalDays(r);
+  const days = 90;
+  let cols = '';
+  for(let i=days-1;i>=0;i--){
+    const d = new Date(today()+'T00:00:00');
+    d.setDate(d.getDate()-i);
+    const ds = d.toISOString().split('T')[0];
+    const done = history.has(ds);
+    const isToday = ds===today();
+    cols += `<div style="width:8px;height:8px;border-radius:2px;background:${done?'#166534':isToday?'var(--bg4)':'var(--bg4)'};flex-shrink:0;${isToday?'outline:1px solid var(--accent2);outline-offset:1px':''}" title="${ds}${done?' ✓':''}"></div>`;
+  }
+  return `<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:.5rem">${cols}</div>`;
+}
+
 function renderRoutines(){
   let list=[...routines];
   if(routineTab==='pending')list=list.filter(r=>!isRoutineDoneToday(r));
@@ -1335,13 +1406,26 @@ function renderRoutines(){
     const last=done?'Done today ✓':r.lastDone?(ds===1?'Yesterday':ds+'d ago'):'Never done';
     const badge=over?`<span class="badge badge-red">Overdue</span>`:done?`<span class="badge badge-green">Done</span>`:'';
     const cls='item-card clickable'+(over?' overdue':'');
-    return `<div class="${cls}" onclick="toggleRoutine('${r.id}')">
-      ${thumbHtml(r.image)}
-      <div class="${done?'check-circle checked':'check-circle'}">${done?'&#10003;':''}</div>
-      <div class="ti-body"><div class="ti-name${done?' struck':''}">${esc(r.name)}</div><div class="ti-meta"><span>${r.room}</span><span class="badge badge-purple">${routineFreqLabel(r)}</span>${badge}<span>${last}</span></div></div>
-      <div class="ti-actions">
-        <button class="icon-btn" onclick="event.stopPropagation();openRoutineForm('${r.id}')" title="Edit">✎</button>
-        <button class="icon-btn" onclick="event.stopPropagation();openModal('Delete?','Remove this routine?',()=>deleteRoutine('${r.id}'))">🗑</button>
+    const stats=routineCompletionStats(r);
+    const statsHtml=`<div style="display:flex;gap:12px;margin-top:.5rem;font-size:12px;color:var(--text3)">
+      <span>✓ ${stats.done} times</span>
+      <span>📊 ${stats.rate}% rate</span>
+      ${stats.streak>1?`<span>🔥 ${stats.streak} in a row</span>`:''}
+    </div>
+    ${buildRoutineGrid(r)}`;
+    return `<div class="${cls}">
+      <div style="display:flex;align-items:flex-start;gap:10px;width:100%" onclick="toggleRoutine('${r.id}')">
+        ${thumbHtml(r.image)}
+        <div class="${done?'check-circle checked':'check-circle'}">${done?'&#10003;':''}</div>
+        <div class="ti-body">
+          <div class="ti-name${done?' struck':''}">${esc(r.name)}</div>
+          <div class="ti-meta"><span>${r.room}</span><span class="badge badge-purple">${routineFreqLabel(r)}</span>${badge}<span>${last}</span></div>
+          ${statsHtml}
+        </div>
+        <div class="ti-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn" onclick="openRoutineForm('${r.id}')" title="Edit">✎</button>
+          <button class="icon-btn" onclick="openModal('Delete?','Remove this routine?',()=>deleteRoutine('${r.id}'))">🗑</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1848,6 +1932,28 @@ function renderGoals(){
 }
 
 // ── JOURNAL ───────────────────────────────────────────────
+function openEntryReader(habitId, entryId) {
+  const h = habits.find(x=>x.id===habitId);
+  const e = (h?.entries||[]).find(x=>x.id===entryId);
+  if(!h||!e) return;
+  document.getElementById('entry-reader-habit').textContent = h.name;
+  const entryTime = e.ts ? new Date(e.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}) : '';
+  document.getElementById('entry-reader-date').textContent = e.date + (entryTime?' · '+entryTime:'') + (e.editedAt?' · edited':'');
+  let bodyHtml = '';
+  if(e.type==='prompted'){
+    bodyHtml = (h.prompts||[]).map((p,i)=>e.answers&&e.answers[i]?
+      `<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:1rem;margin-bottom:4px">${esc(p)}</div>
+       <div class="entry-reader-body">${esc(e.answers[i])}</div>`:'').join('');
+  } else {
+    bodyHtml = `<div class="entry-reader-body">${esc(e.text||'')}</div>`;
+  }
+  document.getElementById('entry-reader-body').innerHTML = bodyHtml;
+  document.getElementById('entry-reader-edit').onclick = ()=>{ closeEntryReader(); openHabitEntryModal(habitId, entryId); };
+  document.getElementById('entry-reader-delete').onclick = ()=>{ closeEntryReader(); openModal('Delete entry?','Remove this journal entry?',()=>deleteHabitEntry(habitId,entryId)); };
+  document.getElementById('entry-reader-overlay').classList.add('open');
+}
+function closeEntryReader(){ document.getElementById('entry-reader-overlay').classList.remove('open'); }
+
 function renderJournal(){
   // Populate filter
   const sel=document.getElementById('journal-filter');
@@ -1863,12 +1969,10 @@ function renderJournal(){
   const search=(document.getElementById('journal-search').value||'').toLowerCase().trim();
   const filterHabitId=document.getElementById('journal-filter').value;
 
-  // Collect all entries
   let allEntries=[];
   habits.forEach(h=>{
     if(filterHabitId&&h.id!==filterHabitId)return;
     (h.entries||[]).forEach(e=>{
-      // Search
       let text='';
       if(e.type==='prompted') text=(e.answers||[]).join(' ');
       else text=e.text||'';
@@ -1886,35 +1990,33 @@ function renderJournal(){
 
   // Group by date
   const byDate={};
-  allEntries.forEach(({h,e})=>{
-    if(!byDate[e.date])byDate[e.date]=[];
-    byDate[e.date].push({h,e});
-  });
+  allEntries.forEach(({h,e})=>{ if(!byDate[e.date])byDate[e.date]=[]; byDate[e.date].push({h,e}); });
   const dates=Object.keys(byDate).sort((a,b)=>b>a?1:-1);
 
   container.innerHTML=dates.map(date=>{
     const label=date===today()?'Today':date===yesterday()?'Yesterday':new Date(date+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     let dayHtml=`<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;margin-top:1rem">${label}</div>`;
     byDate[date].forEach(({h,e})=>{
-      let bodyHtml='';
-      if(e.type==='prompted'){
-        bodyHtml=(h.prompts||[]).map((p,i)=>e.answers&&e.answers[i]?`<div class="journal-prompt-label">${esc(p)}</div><div class="journal-body">${esc(e.answers[i])}</div>`:'').join('');
-      } else {
-        bodyHtml=`<div class="journal-body">${esc(e.text||'').replace(/\n/g,'<br>')}</div>`;
-      }
+      // Build preview text
+      let previewText='';
+      if(e.type==='prompted') previewText=(e.answers||[]).filter(Boolean).join(' · ');
+      else previewText=e.text||'';
+      // Strip newlines for preview
+      const preview=previewText.replace(/\n/g,' ').trim();
       const entryTime=e.ts?new Date(e.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}):'';
-      dayHtml+=`<div class="journal-entry">
+      const wordCount=previewText.split(/\s+/).filter(Boolean).length;
+      dayHtml+=`<div class="journal-entry" onclick="openEntryReader('${h.id}','${e.id}')">
         <div class="journal-entry-header">
           <div>
             <div class="journal-habit-name">${esc(h.name)}</div>
-            <div class="journal-date">${entryTime}${e.editedAt?' · edited':''}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${entryTime}${e.editedAt?' · edited':''} · ${wordCount} words</div>
           </div>
-          <div style="display:flex;gap:4px">
+          <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
             <button class="icon-btn" onclick="openHabitEntryModal('${h.id}','${e.id}')" title="Edit">✎</button>
             <button class="icon-btn" onclick="openModal('Delete entry?','Remove this journal entry?',()=>deleteHabitEntry('${h.id}','${e.id}'))" title="Delete">🗑</button>
           </div>
         </div>
-        ${bodyHtml}
+        ${preview?`<div class="journal-preview">${esc(preview)}</div>`:'<div style="font-size:13px;color:var(--text3);font-style:italic">Empty entry</div>'}
       </div>`;
     });
     return dayHtml;
@@ -2223,6 +2325,7 @@ function closeGoalGraph(){ document.getElementById('goal-graph-overlay').classLi
 // ── SEED / MIGRATE ────────────────────────────────────────
 goals.forEach(g=>{if(!g.logs)g.logs=[];});
 habits.forEach(h=>{if(!h.entries)h.entries=[];});
+routines.forEach(r=>{if(!r.history)r.history=r.lastDone?[r.lastDone]:[];});
 
 // ── INIT ──────────────────────────────────────────────────
 const nowD=nowIST();
