@@ -733,7 +733,7 @@ function saveTasksDB()    { saveAndSync('lt3_tasks',tasks,'tasks'); }
 function saveRoutinesDB() { saveAndSync('lt3_routines',routines,'routines'); }
 function saveHabitsDB()   { saveAndSync('lt3_habits',habits,'habits'); }
 function saveGoalsDB()    { saveAndSync('lt3_goals',goals,'goals'); }
-function saveSleepDB()    { saveSleepDB(); syncSleep(); }
+function saveSleepDB()    { S.set('lt3_sleep',sleepLogs); syncSleep(); }
 function saveMetaDB()     { S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay); syncMeta(); }
 
 // ── AUTH ──────────────────────────────────────────────────
@@ -2204,19 +2204,23 @@ async function initApp(user) {
   renderDashboard();
 }
 
-// Listen for auth state changes
+// ── AUTH INIT ─────────────────────────────────────────────
+// Use onAuthStateChange as single source of truth
+// INITIAL_SESSION fires once on load with current session or null
 supa.auth.onAuthStateChange(async (event, session) => {
-  if(session?.user) {
-    await initApp(session.user);
-  } else {
+  if(event === 'SIGNED_OUT') {
     currentUser = null;
+    tasks=[];routines=[];habits=[];goals=[];sleepLogs={};streak=0;lastDay='';
+    showLoginScreen();
+    return;
+  }
+  if(session?.user) {
+    if(currentUser?.id === session.user.id) return; // already loaded
+    await initApp(session.user);
+  } else if(event === 'INITIAL_SESSION') {
+    // No session on load — show login
     showLoginScreen();
   }
-});
-
-// Check initial session
-supa.auth.getSession().then(({data:{session}}) => {
-  if(!session) showLoginScreen();
 });
 </script>
 </body>
