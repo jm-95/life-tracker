@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Life Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Sans:wght@400;500&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -240,9 +241,38 @@ textarea{resize:vertical;min-height:60px}
 /* SPARKLINE + GRAPH */
 .sparkline-svg{display:block;width:100%;height:32px}
 .goal-graph-modal{max-height:85vh;overflow-y:auto}
+/* LOGIN SCREEN */
+#login-screen{display:none;position:fixed;inset:0;background:var(--bg);z-index:500;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem}
+#login-screen.show{display:flex}
+.login-card{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:2.5rem 2rem;text-align:center;max-width:360px;width:100%}
+.login-logo{font-size:40px;margin-bottom:1rem}
+.login-title{font-family:'DM Sans',sans-serif;font-size:24px;font-weight:700;color:var(--text);margin-bottom:.5rem}
+.login-sub{font-size:14px;color:var(--text2);margin-bottom:2rem;line-height:1.5}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:var(--r-sm);background:#fff;color:#1a1a1a;border:none;font-size:15px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:opacity .15s}
+.btn-google:hover{opacity:.9}
+.btn-google img{width:20px;height:20px}
+/* SYNC INDICATOR */
+#sync-indicator{position:fixed;bottom:5.5rem;right:1rem;font-size:11px;color:var(--text3);display:none;align-items:center;gap:4px;z-index:40}
+#sync-indicator.show{display:flex}
 </style>
 </head>
 <body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">✦</div>
+    <div class="login-title">Life Tracker</div>
+    <div class="login-sub">Sign in to sync your data across all your devices.</div>
+    <button class="btn-google" onclick="signInWithGoogle()">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"/>
+      Continue with Google
+    </button>
+  </div>
+</div>
+
+<!-- SYNC INDICATOR -->
+<div id="sync-indicator">⟳ Syncing...</div>
 
 <!-- DASHBOARD -->
 <div id="page-dashboard" class="page active">
@@ -539,6 +569,13 @@ textarea{resize:vertical;min-height:60px}
       <button class="icon-btn" onclick="closeSettings()">✕</button>
     </div>
     <div class="settings-section">
+      <div class="settings-title">Account</div>
+      <div class="settings-row">
+        <div><div class="settings-label" id="settings-user-email">Signed in</div><div class="settings-sub">Google account</div></div>
+        <button class="btn btn-sm btn-danger" onclick="signOut()">Sign out</button>
+      </div>
+    </div>
+    <div class="settings-section">
       <div class="settings-title">Storage</div>
       <div id="storage-info"></div>
     </div>
@@ -567,30 +604,154 @@ textarea{resize:vertical;min-height:60px}
 <div class="toast" id="toast"></div>
 
 <script>
-// ── STORAGE ───────────────────────────────────────────────
+// ── SUPABASE ──────────────────────────────────────────────
+const SUPA_URL = 'https://igfahtccslcftflcvlzi.supabase.co';
+const SUPA_KEY = 'sb_publishable_BFLpcx_P0_g3sLWqaeiWcA_85-B3JrF';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+let currentUser = null;
+
+// ── LOCAL CACHE ───────────────────────────────────────────
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)) } catch(e) { return null } },
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v))
 };
 
 // ── STATE ─────────────────────────────────────────────────
-let tasks    = S.get('lt3_tasks')    || [];
-let routines = S.get('lt3_routines') || [];
-let habits   = S.get('lt3_habits')   || [];
-let goals    = S.get('lt3_goals')    || [];
-let streak   = S.get('lt3_streak')   || 0;
-let lastDay  = S.get('lt3_lastday')  || '';
+let tasks    = [];
+let routines = [];
+let habits   = [];
+let goals    = [];
+let streak   = 0;
+let lastDay  = '';
 
 let taskTab = 'active', routineTab = 'pending';
 let activeGoalId = null, pendingNoteId = null;
 let editingId = { task:null, routine:null, habit:null, goal:null };
 const habitMonthOffset = {};
 let calYear, calMonth;
-// Temp image buffers for forms
 const imgBuf = { t:null, r:null, h:null, g:null };
 
 const FREQ_DAYS  = {daily:1,weekly:7,biweekly:14,monthly:30,custom:null};
 const FREQ_LABEL = {daily:'Daily',weekly:'Weekly',biweekly:'2 weeks',monthly:'Monthly',custom:'Custom'};
+
+// ── SUPABASE SYNC ─────────────────────────────────────────
+function showSync(msg) {
+  const el = document.getElementById('sync-indicator');
+  el.textContent = msg||'⟳ Syncing...';
+  el.classList.add('show');
+}
+function hideSync() { document.getElementById('sync-indicator').classList.remove('show'); }
+
+async function loadFromSupabase() {
+  if (!currentUser) return;
+  showSync('⟳ Loading...');
+  try {
+    const uid = currentUser.id;
+    const [t,r,h,g,sl,um] = await Promise.all([
+      supa.from('tasks').select('id,data').eq('user_id',uid),
+      supa.from('routines').select('id,data').eq('user_id',uid),
+      supa.from('habits').select('id,data').eq('user_id',uid),
+      supa.from('goals').select('id,data').eq('user_id',uid),
+      supa.from('sleep_logs').select('data').eq('user_id',uid).maybeSingle(),
+      supa.from('user_meta').select('data').eq('user_id',uid).maybeSingle(),
+    ]);
+    tasks    = (t.data||[]).map(x=>x.data);
+    routines = (r.data||[]).map(x=>x.data);
+    habits   = (h.data||[]).map(x=>x.data);
+    goals    = (g.data||[]).map(x=>x.data);
+    sleepLogs= sl.data?.data || {};
+    const meta = um.data?.data || {};
+    streak  = meta.streak  || 0;
+    lastDay = meta.lastDay || '';
+    // Migrate
+    goals.forEach(g=>{if(!g.logs)g.logs=[];});
+    habits.forEach(h=>{if(!h.entries)h.entries=[];});
+    // Cache locally
+    saveTasksDB(); saveRoutinesDB();
+    saveHabitsDB(); saveGoalsDB();
+    saveSleepDB();
+    S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay);
+  } catch(e) { console.error('Load error',e); }
+  hideSync();
+}
+
+async function syncItem(table, item) {
+  if (!currentUser) return;
+  showSync('⟳ Saving...');
+  try {
+    await supa.from(table).upsert({id:item.id, user_id:currentUser.id, data:item, updated_at:new Date().toISOString()});
+  } catch(e) { console.error('Sync error',e); }
+  hideSync();
+}
+async function deleteItem(table, id) {
+  if (!currentUser) return;
+  try { await supa.from(table).delete().eq('id',id).eq('user_id',currentUser.id); }
+  catch(e) { console.error('Delete error',e); }
+}
+async function syncMeta() {
+  if (!currentUser) return;
+  try {
+    await supa.from('user_meta').upsert({user_id:currentUser.id, data:{streak,lastDay}, updated_at:new Date().toISOString()});
+  } catch(e) { console.error('Meta sync error',e); }
+}
+async function syncSleep() {
+  if (!currentUser) return;
+  try {
+    await supa.from('sleep_logs').upsert({user_id:currentUser.id, data:sleepLogs, updated_at:new Date().toISOString()});
+  } catch(e) { console.error('Sleep sync error',e); }
+}
+async function syncAllToSupabase(data) {
+  if (!currentUser) return;
+  showSync('⟳ Migrating...');
+  const uid = currentUser.id;
+  const now = new Date().toISOString();
+  try {
+    if(data.tasks?.length)    await supa.from('tasks').upsert(data.tasks.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.routines?.length) await supa.from('routines').upsert(data.routines.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.habits?.length)   await supa.from('habits').upsert(data.habits.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.goals?.length)    await supa.from('goals').upsert(data.goals.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.sleepLogs && Object.keys(data.sleepLogs).length) await supa.from('sleep_logs').upsert({user_id:uid,data:data.sleepLogs,updated_at:now});
+    if(data.streak||data.lastDay) await supa.from('user_meta').upsert({user_id:uid,data:{streak:data.streak||0,lastDay:data.lastDay||''},updated_at:now});
+    toast('Data migrated to cloud ✓');
+  } catch(e) { toast('Migration error — check console'); console.error(e); }
+  hideSync();
+}
+
+// ── OVERRIDE SAVE FUNCTIONS TO SYNC ───────────────────────
+// Wrap S.set to also sync to Supabase
+function saveAndSync(localKey, arr, table) {
+  S.set(localKey, arr);
+  if (!currentUser) return;
+  // Sync all items (upsert full array)
+  const uid = currentUser.id;
+  const now = new Date().toISOString();
+  showSync('⟳ Saving...');
+  supa.from(table).upsert(arr.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})))
+    .then(()=>hideSync()).catch(e=>{console.error(e);hideSync();});
+}
+function saveTasksDB()    { saveAndSync('lt3_tasks',tasks,'tasks'); }
+function saveRoutinesDB() { saveAndSync('lt3_routines',routines,'routines'); }
+function saveHabitsDB()   { saveAndSync('lt3_habits',habits,'habits'); }
+function saveGoalsDB()    { saveAndSync('lt3_goals',goals,'goals'); }
+function saveSleepDB()    { saveSleepDB(); syncSleep(); }
+function saveMetaDB()     { S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay); syncMeta(); }
+
+// ── AUTH ──────────────────────────────────────────────────
+async function signInWithGoogle() {
+  await supa.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+}
+async function signOut() {
+  await supa.auth.signOut();
+  currentUser = null;
+  tasks=[];routines=[];habits=[];goals=[];sleepLogs={};streak=0;lastDay='';
+  closeSettings();
+  showLoginScreen();
+}
+function showLoginScreen() { document.getElementById('login-screen').classList.add('show'); }
+function hideLoginScreen() { document.getElementById('login-screen').classList.remove('show'); }
 
 function routineIntervalDays(r) {
   if(r.freq==='custom') return r.customDays||1;
@@ -727,7 +888,7 @@ function importData(input) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      openModal('Import data?','This will overwrite all current data with the backup.',()=>{
+      openModal('Import data?','This will overwrite all current data with the backup.',async ()=>{
         tasks    = data.tasks    || [];
         routines = data.routines || [];
         habits   = data.habits   || [];
@@ -735,10 +896,8 @@ function importData(input) {
         streak   = data.streak   || 0;
         lastDay  = data.lastDay  || '';
         sleepLogs= data.sleepLogs|| {};
-        S.set('lt3_tasks',tasks); S.set('lt3_routines',routines);
-        S.set('lt3_habits',habits); S.set('lt3_goals',goals);
-        S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay);
-        S.set('lt3_sleep',sleepLogs);
+        // Sync everything to Supabase
+        await syncAllToSupabase({tasks,routines,habits,goals,sleepLogs,streak,lastDay});
         closeSettings(); renderDashboard(); toast('Data imported ✓');
       },'Import','btn-accent');
     } catch(err) { toast('Invalid backup file'); }
@@ -747,9 +906,21 @@ function importData(input) {
   reader.readAsText(file);
 }
 function confirmClearAll() {
-  openModal('Clear all data?','This permanently deletes everything. This cannot be undone.',()=>{
+  openModal('Clear all data?','This permanently deletes everything. This cannot be undone.',async ()=>{
     ['lt3_tasks','lt3_routines','lt3_habits','lt3_goals','lt3_streak','lt3_lastday','lt3_sleep'].forEach(k=>localStorage.removeItem(k));
     tasks=[];routines=[];habits=[];goals=[];streak=0;lastDay='';sleepLogs={};
+    // Clear from Supabase too
+    if(currentUser){
+      const uid=currentUser.id;
+      await Promise.all([
+        supa.from('tasks').delete().eq('user_id',uid),
+        supa.from('routines').delete().eq('user_id',uid),
+        supa.from('habits').delete().eq('user_id',uid),
+        supa.from('goals').delete().eq('user_id',uid),
+        supa.from('sleep_logs').delete().eq('user_id',uid),
+        supa.from('user_meta').delete().eq('user_id',uid),
+      ]);
+    }
     closeSettings(); renderDashboard(); toast('All data cleared');
   },'Clear everything','btn-danger');
 }
@@ -969,7 +1140,7 @@ function saveTask() {
     tasks.push({id:uid(),name,due,done:false,doneAt:null,note:'',image:imgBuf.t||null,created:today()});
     toast('Task added ✓');
   }
-  S.set('lt3_tasks',tasks); closeTaskForm(); renderTasks();
+  saveTasksDB(); closeTaskForm(); renderTasks();
 }
 function markTaskDone(id) {
   pendingNoteId = id;
@@ -981,16 +1152,16 @@ function closeNoteModal() { document.getElementById('note-overlay').classList.re
 function submitNote(save) {
   const t = tasks.find(x=>x.id===pendingNoteId); if (!t){closeNoteModal();return;}
   t.done=true; t.doneAt=nowISO(); t.note=save?document.getElementById('note-input').value.trim():'';
-  S.set('lt3_tasks',tasks); closeNoteModal();
+  saveTasksDB(); closeNoteModal();
   if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
   else renderTasks();
   toast('Done! 🎉');
 }
 function undoTask(id) {
   const t=tasks.find(x=>x.id===id); if(!t)return;
-  t.done=false;t.doneAt=null;t.note=''; S.set('lt3_tasks',tasks); renderTasks(); toast('Marked as pending');
+  t.done=false;t.doneAt=null;t.note=''; saveTasksDB(); renderTasks(); toast('Marked as pending');
 }
-function deleteTask(id) { tasks=tasks.filter(x=>x.id!==id); S.set('lt3_tasks',tasks); renderTasks(); toast('Task removed'); }
+function deleteTask(id) { tasks=tasks.filter(x=>x.id!==id); saveTasksDB(); renderTasks(); toast('Task removed'); }
 function switchTaskTab(tab) {
   taskTab=tab;
   document.querySelectorAll('#page-tasks .tab-btn').forEach((b,i)=>b.classList.toggle('active',['active','done'][i]===tab));
@@ -1101,15 +1272,15 @@ function saveRoutine(){
     routines.push(nr);
     toast('Routine added ✓');
   }
-  S.set('lt3_routines',routines);closeRoutineForm();renderRoutines();
+  saveRoutinesDB();closeRoutineForm();renderRoutines();
 }
 function toggleRoutine(id){
   const r=routines.find(x=>x.id===id);if(!r)return;
   if(isRoutineDoneToday(r)){r.lastDone=r.prevDone||null;toast('Marked pending');}
   else{r.prevDone=r.lastDone;r.lastDone=today();toast('Done! 🎉');}
-  updateRoutineStreak();S.set('lt3_routines',routines);renderRoutines();
+  updateRoutineStreak();saveRoutinesDB();renderRoutines();
 }
-function deleteRoutine(id){routines=routines.filter(x=>x.id!==id);S.set('lt3_routines',routines);renderRoutines();toast('Routine removed');}
+function deleteRoutine(id){routines=routines.filter(x=>x.id!==id);saveRoutinesDB();renderRoutines();toast('Routine removed');}
 function switchRoutineTab(tab){
   routineTab=tab;
   document.querySelectorAll('#page-routines .tab-btn').forEach((b,i)=>b.classList.toggle('active',['pending','done','all'][i]===tab));
@@ -1119,7 +1290,7 @@ function updateRoutineStreak(){
   const allDue=routines.filter(r=>isRoutineDue(r)||isRoutineDoneToday(r));
   if(allDue.length>0&&allDue.every(r=>isRoutineDoneToday(r))&&lastDay!==today()){
     streak=(lastDay&&daysBetween(lastDay,today())===1)?streak+1:1;
-    lastDay=today();S.set('lt3_streak',streak);S.set('lt3_lastday',lastDay);
+    lastDay=today();saveMetaDB();
   }
 }
 function confirmNewDay(){openModal('New day?','Refresh routine due-states.',()=>{updateRoutineStreak();renderRoutines();toast('🌅 New day!');},'Start','btn-accent');}
@@ -1250,7 +1421,7 @@ function saveHabit(){
     habits.push(h);
     toast('Habit added ✓');
   }
-  S.set('lt3_habits',habits);closeHabitForm();renderHabits();
+  saveHabitsDB();closeHabitForm();renderHabits();
 }
 
 // ── HABIT ENTRIES ─────────────────────────────────────────
@@ -1337,7 +1508,7 @@ function saveHabitEntry(){
     h.entries.push(entry);
     toast('Entry saved ✓');
   }
-  S.set('lt3_habits',habits);
+  saveHabitsDB();
   closeHabitEntryModal();
   renderHabits();
 }
@@ -1353,7 +1524,7 @@ function openHabitBackdateModal(habitId){
       // Mark habit done for that date
       if(!h.log)h.log={};
       h.log[ds]=h.type==='yesno'?true:(h.target||1);
-      S.set('lt3_habits',habits);
+      saveHabitsDB();
       openHabitEntryModal(habitId,null,()=>renderHabits(),ds);
     },
     'Mark done & write entry','btn-accent'
@@ -1368,7 +1539,7 @@ function openHabitBackdateModal(habitId){
 function deleteHabitEntry(habitId,entryId){
   const h=habits.find(x=>x.id===habitId);if(!h)return;
   h.entries=(h.entries||[]).filter(e=>e.id!==entryId);
-  S.set('lt3_habits',habits);renderJournal();toast('Entry deleted');
+  saveHabitsDB();renderJournal();toast('Entry deleted');
 }
 
 function toggleHabitYN(id){
@@ -1376,7 +1547,7 @@ function toggleHabitYN(id){
   if(!h.log)h.log={};
   const wasOn=h.log[today()]===true;
   h.log[today()]=!wasOn;
-  S.set('lt3_habits',habits);
+  saveHabitsDB();
   if(!wasOn){
     // Always offer entry prompt when marking done
     openHabitEntryModal(id,null,()=>renderHabits());
@@ -1391,7 +1562,7 @@ function adjustCount(id,delta){
   if(!h.log)h.log={};
   const prev=(h.log[today()]||0);
   h.log[today()]=Math.max(0,prev+delta);
-  S.set('lt3_habits',habits);
+  saveHabitsDB();
   const hitTarget=(h.log[today()]||0)>=(h.target||1) && prev<(h.target||1);
   if(hitTarget){
     renderHabits();
@@ -1401,7 +1572,7 @@ function adjustCount(id,delta){
     renderHabits();
   }
 }
-function deleteHabit(id){habits=habits.filter(x=>x.id!==id);S.set('lt3_habits',habits);renderHabits();toast('Habit removed');}
+function deleteHabit(id){habits=habits.filter(x=>x.id!==id);saveHabitsDB();renderHabits();toast('Habit removed');}
 function shiftHabitMonth(id,delta){habitMonthOffset[id]=(habitMonthOffset[id]||0)+delta;renderHabits();}
 function buildMonthGrid(h){
   const offset=habitMonthOffset[h.id]||0;
@@ -1510,7 +1681,7 @@ function saveGoal(){
     goals.push({id:uid(),name,target,unit,current:0,logs:[],completed:false,created:today(),image:imgBuf.g||null});
     toast('Goal added ✓');
   }
-  S.set('lt3_goals',goals);closeGoalForm();renderGoals();
+  saveGoalsDB();closeGoalForm();renderGoals();
 }
 // Log modal
 function openLogModal(id,editLogIdx){
@@ -1552,16 +1723,16 @@ function submitLog(){
     if(g.current>=g.target){g.completed=true;toast('🏆 Goal completed!');}
     else toast(logDate===today()?'Progress logged ✓':'Back-dated log saved ✓');
   }
-  S.set('lt3_goals',goals);closeLogModal();renderGoals();
+  saveGoalsDB();closeLogModal();renderGoals();
 }
 function deleteLog(goalId,logIdx){
   const g=goals.find(x=>x.id===goalId);if(!g)return;
   const removed=g.logs.splice(logIdx,1)[0];
   g.current=Math.max(0,g.current-removed.amount);
   if(g.completed&&g.current<g.target)g.completed=false;
-  S.set('lt3_goals',goals);renderGoals();toast('Log entry removed');
+  saveGoalsDB();renderGoals();toast('Log entry removed');
 }
-function deleteGoal(id){goals=goals.filter(x=>x.id!==id);S.set('lt3_goals',goals);renderGoals();toast('Goal removed');}
+function deleteGoal(id){goals=goals.filter(x=>x.id!==id);saveGoalsDB();renderGoals();toast('Goal removed');}
 function renderGoals(){
   const active=goals.filter(g=>!g.completed),done=goals.filter(g=>g.completed);
   let html='';
@@ -1777,7 +1948,7 @@ function saveSleepLog() {
   const naps=napFields.filter(n=>n.start&&n.end).map(n=>({start:n.start,end:n.end,mins:calcSleepMins(n.start,n.end)}));
   const napMins=naps.reduce((s,n)=>s+n.mins,0);
   sleepLogs[sleepModalDate]={bed,wake,nightMins,naps,napMins,total:nightMins+napMins};
-  S.set('lt3_sleep',sleepLogs);
+  saveSleepDB();
   closeSleepModal();
   renderSleepCard();
   toast('Sleep logged ✓');
@@ -1992,39 +2163,61 @@ function openGoalGraph(id) {
 }
 function closeGoalGraph(){ document.getElementById('goal-graph-overlay').classList.remove('open'); }
 
-// ── SEED ──────────────────────────────────────────────────
-// Only seed on first ever load, never again
-// Mark as seeded immediately — no default data added
-if(!S.get('lt3_seeded')) S.set('lt3_seeded', true);
-// Migrate old data
+// ── SEED / MIGRATE ────────────────────────────────────────
 goals.forEach(g=>{if(!g.logs)g.logs=[];});
 habits.forEach(h=>{if(!h.entries)h.entries=[];});
 
 // ── INIT ──────────────────────────────────────────────────
 const nowD=nowIST();
 calYear=nowD.getFullYear();calMonth=nowD.getMonth();
-renderDashboard();
 
-// First-open import prompt — show if no data at all exists
-// (catches the case of opening a new local HTML file with fresh localStorage)
-(function() {
-  const hasAnyData = tasks.length||routines.length||habits.length||goals.length||Object.keys(sleepLogs).length;
-  const dismissed = S.get('lt3_import_dismissed');
-  if(!hasAnyData && !dismissed) {
+async function initApp(user) {
+  currentUser = user;
+  document.getElementById('settings-user-email').textContent = user.email || 'Signed in';
+  hideLoginScreen();
+  await loadFromSupabase();
+  // Check if user has localStorage data that hasn't been migrated yet
+  const localTasks    = S.get('lt3_tasks')    || [];
+  const localRoutines = S.get('lt3_routines') || [];
+  const localHabits   = S.get('lt3_habits')   || [];
+  const localGoals    = S.get('lt3_goals')    || [];
+  const localSleep    = S.get('lt3_sleep')    || {};
+  const hasLocalData  = localTasks.length||localRoutines.length||localHabits.length||localGoals.length;
+  const hasCloudData  = tasks.length||routines.length||habits.length||goals.length;
+  if(hasLocalData && !hasCloudData && !S.get('lt3_migration_done')) {
     setTimeout(()=>{
-      const banner = document.createElement('div');
-      banner.id = 'import-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#1A1200;border-bottom:1px solid #3A3000;padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:300;flex-wrap:wrap';
-      banner.innerHTML = `
-        <span style="font-size:13px;color:#FDE68A;flex:1;min-width:200px">⚠ No data found. Have a backup from a previous version?</span>
-        <div style="display:flex;gap:8px">
-          <button onclick="document.getElementById('import-file').click();document.getElementById('import-banner').remove()" style="background:#C4A96B;color:#0F0F0F;border:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:500;cursor:pointer">Import backup</button>
-          <button onclick="S.set('lt3_import_dismissed',true);document.getElementById('import-banner').remove()" style="background:none;border:1px solid #3A3000;color:#9A9590;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer">Start fresh</button>
-        </div>`;
-      document.body.appendChild(banner);
-    }, 500);
+      openModal(
+        'Migrate local data?',
+        'You have data saved locally. Upload it to the cloud so it syncs to all devices?',
+        async ()=>{
+          tasks=localTasks; routines=localRoutines; habits=localHabits; goals=localGoals;
+          sleepLogs=localSleep;
+          streak=S.get('lt3_streak')||0; lastDay=S.get('lt3_lastday')||'';
+          await syncAllToSupabase({tasks,routines,habits,goals,sleepLogs,streak,lastDay});
+          S.set('lt3_migration_done',true);
+          renderDashboard();
+        },
+        'Upload to cloud','btn-accent'
+      );
+    }, 800);
   }
-})();
+  renderDashboard();
+}
+
+// Listen for auth state changes
+supa.auth.onAuthStateChange(async (event, session) => {
+  if(session?.user) {
+    await initApp(session.user);
+  } else {
+    currentUser = null;
+    showLoginScreen();
+  }
+});
+
+// Check initial session
+supa.auth.getSession().then(({data:{session}}) => {
+  if(!session) showLoginScreen();
+});
 </script>
 </body>
 </html>
