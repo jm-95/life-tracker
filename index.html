@@ -610,6 +610,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 console.log('Supabase client created:', !!supa);
 let currentUser = null;
+let currentToken = null; // cached access token — never call getSession() again
 
 // ── LOCAL CACHE ───────────────────────────────────────────
 const S = {
@@ -644,22 +645,12 @@ function showSync(msg) {
 function hideSync() { document.getElementById('sync-indicator').classList.remove('show'); }
 
 async function loadFromSupabase() {
-  if (!currentUser) { console.log('No user, skipping load'); return; }
+  if (!currentUser || !currentToken) { console.log('No user/token, skipping load'); return; }
   showSync('⟳ Loading...');
   console.log('Loading for user:', currentUser.id);
   try {
     const uid = currentUser.id;
-    // Get fresh session to use access token directly
-    const { data: { session } } = await supa.auth.getSession();
-    const token = session?.access_token;
-    if (!token) throw new Error('No access token');
-    console.log('Got access token, querying...');
-    // Use fetch directly with the token instead of Supabase client for queries
-    const headers = {
-      'apikey': SUPA_KEY,
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json'
-    };
+    const headers = await getAuthHeaders();
     const base = SUPA_URL + '/rest/v1';
     const [t,r,h,g,sl,um] = await Promise.all([
       fetch(`${base}/tasks?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
@@ -732,8 +723,7 @@ async function syncAllToSupabase(data) {
 
 // ── DIRECT FETCH HELPERS ──────────────────────────────────
 async function getAuthHeaders() {
-  const { data: { session } } = await supa.auth.getSession();
-  const token = session?.access_token || SUPA_KEY;
+  const token = currentToken || SUPA_KEY;
   return {
     'apikey': SUPA_KEY,
     'Authorization': 'Bearer ' + token,
@@ -2207,8 +2197,10 @@ habits.forEach(h=>{if(!h.entries)h.entries=[];});
 const nowD=nowIST();
 calYear=nowD.getFullYear();calMonth=nowD.getMonth();
 
-async function initApp(user) {
+async function initApp(user, token) {
   currentUser = user;
+  currentToken = token || null;
+  console.log('initApp — user:', user.email, 'token:', !!currentToken);
   document.getElementById('settings-user-email').textContent = user.email || 'Signed in';
   hideLoginScreen();
   await loadFromSupabase();
@@ -2244,18 +2236,17 @@ async function initApp(user) {
 // Use onAuthStateChange as single source of truth
 // INITIAL_SESSION fires once on load with current session or null
 supa.auth.onAuthStateChange(async (event, session) => {
-  console.log('Auth event:', event, 'user:', session?.user?.email);
+  console.log('Auth event:', event, 'user:', session?.user?.email, 'token:', !!session?.access_token);
   if(event === 'SIGNED_OUT') {
-    currentUser = null;
+    currentUser = null; currentToken = null;
     tasks=[];routines=[];habits=[];goals=[];sleepLogs={};streak=0;lastDay='';
     showLoginScreen();
     return;
   }
   if(session?.user) {
-    if(currentUser?.id === session.user.id) return; // already loaded
-    await initApp(session.user);
+    if(currentUser?.id === session.user.id && currentToken) return;
+    await initApp(session.user, session.access_token);
   } else if(event === 'INITIAL_SESSION') {
-    // No session on load — show login
     showLoginScreen();
   }
 });
