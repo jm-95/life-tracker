@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:60px}
     </div>
     <div id="habit-entry-fields"></div>
     <div class="modal-actions">
-      <button class="btn btn-sm" onclick="closeHabitEntryModal()">Cancel</button>
+      <button class="btn btn-sm" onclick="skipHabitEntry()">Skip</button>
       <button class="btn btn-sm btn-accent" onclick="saveHabitEntry()">Save entry</button>
     </div>
   </div>
@@ -1506,6 +1506,10 @@ function closeHabitEntryModal(){
   if(habitEntryState.onDone) habitEntryState.onDone();
   habitEntryState={habitId:null,editEntryId:null,onDone:null};
 }
+function skipHabitEntry(){
+  // Just close without saving anything
+  closeHabitEntryModal();
+}
 function saveHabitEntry(){
   const h=habits.find(x=>x.id===habitEntryState.habitId);if(!h)return;
   if(!h.entries)h.entries=[];
@@ -1518,25 +1522,45 @@ function saveHabitEntry(){
   let entry;
   if(h.entryType==='prompted'){
     const answers=(h.prompts||[]).map((_,i)=>{const el=document.getElementById('entry-f-'+i);return el?el.value.trim():'';});
+    const hasContent=answers.some(a=>a.length>0);
+    if(!hasContent){ closeHabitEntryModal(); return; } // nothing written, just close
     entry={id:uid(),date:entryDate,ts:nowISO(),type:'prompted',answers};
   } else {
     const textEl=document.getElementById('entry-f-0');
     const text=textEl?textEl.value.trim():'';
+    if(!text){ closeHabitEntryModal(); return; } // nothing written, just close
     entry={id:uid(),date:entryDate,ts:nowISO(),type:h.entryType||'freetext',text};
   }
   if(habitEntryState.editEntryId){
     const idx=h.entries.findIndex(e=>e.id===habitEntryState.editEntryId);
     if(idx>=0){entry.id=habitEntryState.editEntryId;entry.editedAt=nowISO();h.entries[idx]=entry;}
     toast('Entry updated ✓');
+    saveHabitsDB(); closeHabitEntryModal(); renderHabits();
   } else {
-    // Replace entry for that date if exists
-    h.entries=h.entries.filter(e=>e.date!==entryDate);
-    h.entries.push(entry);
-    toast('Entry saved ✓');
+    // Check if existing entry for this date has content
+    const existing=h.entries.find(e=>e.date===entryDate);
+    const existingHasContent = existing && (
+      (existing.text && existing.text.length>0) ||
+      (existing.answers && existing.answers.some(a=>a&&a.length>0))
+    );
+    if(existingHasContent){
+      // Warn before overwriting
+      openModal(
+        'Overwrite existing entry?',
+        'You already have an entry for '+entryDate+'. Replace it with this new one?',
+        ()=>{
+          h.entries=h.entries.filter(e=>e.date!==entryDate);
+          h.entries.push(entry);
+          saveHabitsDB(); renderHabits(); toast('Entry saved ✓');
+        },
+        'Replace','btn-danger'
+      );
+    } else {
+      if(existing) h.entries=h.entries.filter(e=>e.date!==entryDate);
+      h.entries.push(entry);
+      saveHabitsDB(); closeHabitEntryModal(); renderHabits(); toast('Entry saved ✓');
+    }
   }
-  saveHabitsDB();
-  closeHabitEntryModal();
-  renderHabits();
 }
 function openHabitBackdateModal(habitId){
   const h=habits.find(x=>x.id===habitId);if(!h)return;
@@ -1575,9 +1599,16 @@ function toggleHabitYN(id){
   h.log[today()]=!wasOn;
   saveHabitsDB();
   if(!wasOn){
-    // Always offer entry prompt when marking done
-    openHabitEntryModal(id,null,()=>renderHabits());
-    toast('🔥 Done! Add a note.');
+    // Check if entry already exists for today
+    const existingEntry = (h.entries||[]).find(e=>e.date===today());
+    if(existingEntry) {
+      // Open in edit mode so existing content is pre-filled, not blank
+      openHabitEntryModal(id, existingEntry.id, ()=>renderHabits());
+      toast('🔥 Done! Edit your entry.');
+    } else {
+      openHabitEntryModal(id, null, ()=>renderHabits());
+      toast('🔥 Done! Add a note.');
+    }
   } else {
     renderHabits();
     toast('Unmarked');
