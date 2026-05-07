@@ -649,24 +649,33 @@ async function loadFromSupabase() {
   console.log('Loading for user:', currentUser.id);
   try {
     const uid = currentUser.id;
-    console.log('Querying tasks...');
-    const t = await supa.from('tasks').select('id,data').eq('user_id',uid);
-    console.log('Tasks result:', t.data?.length, 'error:', t.error?.message);
-    const r = await supa.from('routines').select('id,data').eq('user_id',uid);
-    console.log('Routines result:', r.data?.length, 'error:', r.error?.message);
-    const h = await supa.from('habits').select('id,data').eq('user_id',uid);
-    console.log('Habits result:', h.data?.length, 'error:', h.error?.message);
-    const g = await supa.from('goals').select('id,data').eq('user_id',uid);
-    console.log('Goals result:', g.data?.length, 'error:', g.error?.message);
-    const sl = await supa.from('sleep_logs').select('data').eq('user_id',uid).maybeSingle();
-    const um = await supa.from('user_meta').select('data').eq('user_id',uid).maybeSingle();
-
-    tasks    = (t.data||[]).map(x=>x.data);
-    routines = (r.data||[]).map(x=>x.data);
-    habits   = (h.data||[]).map(x=>x.data);
-    goals    = (g.data||[]).map(x=>x.data);
-    sleepLogs= sl.data?.data || {};
-    const meta = um.data?.data || {};
+    // Get fresh session to use access token directly
+    const { data: { session } } = await supa.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('No access token');
+    console.log('Got access token, querying...');
+    // Use fetch directly with the token instead of Supabase client for queries
+    const headers = {
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    };
+    const base = SUPA_URL + '/rest/v1';
+    const [t,r,h,g,sl,um] = await Promise.all([
+      fetch(`${base}/tasks?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/routines?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/habits?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/goals?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/sleep_logs?select=data&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
+      fetch(`${base}/user_meta?select=data&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
+    ]);
+    console.log('Tasks:', Array.isArray(t)?t.length:'error', t?.message||'');
+    tasks    = Array.isArray(t) ? t.map(x=>x.data) : [];
+    routines = Array.isArray(r) ? r.map(x=>x.data) : [];
+    habits   = Array.isArray(h) ? h.map(x=>x.data) : [];
+    goals    = Array.isArray(g) ? g.map(x=>x.data) : [];
+    sleepLogs= Array.isArray(sl) && sl.length ? sl[0].data : {};
+    const meta = Array.isArray(um) && um.length ? um[0].data : {};
     streak  = meta.streak  || 0;
     lastDay = meta.lastDay || '';
     goals.forEach(g=>{if(!g.logs)g.logs=[];});
@@ -681,7 +690,6 @@ async function loadFromSupabase() {
     console.log('Load complete — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
   } catch(e) {
     console.error('Load error:', e.message);
-    toast('Load error: '+e.message);
     tasks    = S.get('lt3_tasks')    || [];
     routines = S.get('lt3_routines') || [];
     habits   = S.get('lt3_habits')   || [];
@@ -694,62 +702,67 @@ async function loadFromSupabase() {
   hideSync();
 }
 
-async function syncItem(table, item) {
-  if (!currentUser) return;
-  showSync('⟳ Saving...');
-  try {
-    await supa.from(table).upsert({id:item.id, user_id:currentUser.id, data:item, updated_at:new Date().toISOString()});
-  } catch(e) { console.error('Sync error',e); }
-  hideSync();
-}
-async function deleteItem(table, id) {
-  if (!currentUser) return;
-  try { await supa.from(table).delete().eq('id',id).eq('user_id',currentUser.id); }
-  catch(e) { console.error('Delete error',e); }
-}
 async function syncMeta() {
   if (!currentUser) return;
-  try {
-    await supa.from('user_meta').upsert({user_id:currentUser.id, data:{streak,lastDay}, updated_at:new Date().toISOString()});
-  } catch(e) { console.error('Meta sync error',e); }
+  try { await dbUpsert('user_meta', {user_id:currentUser.id, data:{streak,lastDay}, updated_at:new Date().toISOString()}); }
+  catch(e) { console.error('Meta sync error',e); }
 }
 async function syncSleep() {
   if (!currentUser) return;
-  try {
-    await supa.from('sleep_logs').upsert({user_id:currentUser.id, data:sleepLogs, updated_at:new Date().toISOString()});
-  } catch(e) { console.error('Sleep sync error',e); }
+  try { await dbUpsert('sleep_logs', {user_id:currentUser.id, data:sleepLogs, updated_at:new Date().toISOString()}); }
+  catch(e) { console.error('Sleep sync error',e); }
 }
 async function syncAllToSupabase(data) {
   if (!currentUser) return;
-  showSync('⟳ Migrating...');
+  showSync('⟳ Syncing...');
   const uid = currentUser.id;
   const now = new Date().toISOString();
   try {
-    const results = await Promise.all([
-      data.tasks?.length    ? supa.from('tasks').upsert(data.tasks.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
-      data.routines?.length ? supa.from('routines').upsert(data.routines.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
-      data.habits?.length   ? supa.from('habits').upsert(data.habits.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
-      data.goals?.length    ? supa.from('goals').upsert(data.goals.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
-      Object.keys(data.sleepLogs||{}).length ? supa.from('sleep_logs').upsert({user_id:uid,data:data.sleepLogs,updated_at:now}) : Promise.resolve({error:null}),
-      (data.streak||data.lastDay) ? supa.from('user_meta').upsert({user_id:uid,data:{streak:data.streak||0,lastDay:data.lastDay||''},updated_at:now}) : Promise.resolve({error:null}),
-    ]);
-    const errors = results.filter(r=>r.error).map(r=>r.error.message);
-    if(errors.length) { console.error('Sync errors:',errors); toast('Sync error: '+errors[0]); }
-    else { console.log('All data synced to Supabase successfully'); toast('Data synced to cloud ✓'); }
+    if(data.tasks?.length)    await dbUpsert('tasks',    data.tasks.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.routines?.length) await dbUpsert('routines', data.routines.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.habits?.length)   await dbUpsert('habits',   data.habits.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(data.goals?.length)    await dbUpsert('goals',    data.goals.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
+    if(Object.keys(data.sleepLogs||{}).length) await dbUpsert('sleep_logs', {user_id:uid,data:data.sleepLogs,updated_at:now});
+    if(data.streak||data.lastDay) await dbUpsert('user_meta', {user_id:uid,data:{streak:data.streak||0,lastDay:data.lastDay||''},updated_at:now});
+    console.log('All data synced to Supabase successfully');
+    toast('Data synced to cloud ✓');
   } catch(e) { toast('Sync error: '+e.message); console.error(e); }
   hideSync();
 }
 
+// ── DIRECT FETCH HELPERS ──────────────────────────────────
+async function getAuthHeaders() {
+  const { data: { session } } = await supa.auth.getSession();
+  const token = session?.access_token || SUPA_KEY;
+  return {
+    'apikey': SUPA_KEY,
+    'Authorization': 'Bearer ' + token,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=minimal'
+  };
+}
+async function dbUpsert(table, body) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+    method: 'POST', headers,
+    body: JSON.stringify(Array.isArray(body)?body:[body])
+  });
+  if (!res.ok) { const e = await res.text(); console.error('Upsert error',table,e); }
+}
+async function dbDelete(table, filter) {
+  const headers = await getAuthHeaders();
+  const params = Object.entries(filter).map(([k,v])=>`${k}=eq.${v}`).join('&');
+  await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, {method:'DELETE', headers});
+}
+
 // ── OVERRIDE SAVE FUNCTIONS TO SYNC ───────────────────────
-// Wrap S.set to also sync to Supabase
 function saveAndSync(localKey, arr, table) {
   S.set(localKey, arr);
   if (!currentUser) return;
-  // Sync all items (upsert full array)
   const uid = currentUser.id;
   const now = new Date().toISOString();
   showSync('⟳ Saving...');
-  supa.from(table).upsert(arr.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})))
+  dbUpsert(table, arr.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})))
     .then(()=>hideSync()).catch(e=>{console.error(e);hideSync();});
 }
 function saveTasksDB()    { saveAndSync('lt3_tasks',tasks,'tasks'); }
@@ -936,12 +949,12 @@ function confirmClearAll() {
     if(currentUser){
       const uid=currentUser.id;
       await Promise.all([
-        supa.from('tasks').delete().eq('user_id',uid),
-        supa.from('routines').delete().eq('user_id',uid),
-        supa.from('habits').delete().eq('user_id',uid),
-        supa.from('goals').delete().eq('user_id',uid),
-        supa.from('sleep_logs').delete().eq('user_id',uid),
-        supa.from('user_meta').delete().eq('user_id',uid),
+        dbDelete('tasks',{user_id:uid}),
+        dbDelete('routines',{user_id:uid}),
+        dbDelete('habits',{user_id:uid}),
+        dbDelete('goals',{user_id:uid}),
+        dbDelete('sleep_logs',{user_id:uid}),
+        dbDelete('user_meta',{user_id:uid}),
       ]);
     }
     closeSettings(); renderDashboard(); toast('All data cleared');
