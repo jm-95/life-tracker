@@ -655,6 +655,12 @@ async function loadFromSupabase() {
       supa.from('sleep_logs').select('data').eq('user_id',uid).maybeSingle(),
       supa.from('user_meta').select('data').eq('user_id',uid).maybeSingle(),
     ]);
+    // Check for errors
+    if(t.error) throw new Error('tasks: '+t.error.message);
+    if(r.error) throw new Error('routines: '+r.error.message);
+    if(h.error) throw new Error('habits: '+h.error.message);
+    if(g.error) throw new Error('goals: '+g.error.message);
+
     tasks    = (t.data||[]).map(x=>x.data);
     routines = (r.data||[]).map(x=>x.data);
     habits   = (h.data||[]).map(x=>x.data);
@@ -663,15 +669,22 @@ async function loadFromSupabase() {
     const meta = um.data?.data || {};
     streak  = meta.streak  || 0;
     lastDay = meta.lastDay || '';
-    // Migrate
+    // Migrate schema
     goals.forEach(g=>{if(!g.logs)g.logs=[];});
     habits.forEach(h=>{if(!h.entries)h.entries=[];});
-    // Cache locally
-    saveTasksDB(); saveRoutinesDB();
-    saveHabitsDB(); saveGoalsDB();
-    saveSleepDB();
-    S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay);
-  } catch(e) { console.error('Load error',e); }
+    // Cache to localStorage only (no re-sync to Supabase)
+    S.set('lt3_tasks',tasks);
+    S.set('lt3_routines',routines);
+    S.set('lt3_habits',habits);
+    S.set('lt3_goals',goals);
+    S.set('lt3_sleep',sleepLogs);
+    S.set('lt3_streak',streak);
+    S.set('lt3_lastday',lastDay);
+    console.log('Loaded from Supabase — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
+  } catch(e) {
+    console.error('Load error',e);
+    toast('Error loading data: '+e.message);
+  }
   hideSync();
 }
 
@@ -706,14 +719,18 @@ async function syncAllToSupabase(data) {
   const uid = currentUser.id;
   const now = new Date().toISOString();
   try {
-    if(data.tasks?.length)    await supa.from('tasks').upsert(data.tasks.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
-    if(data.routines?.length) await supa.from('routines').upsert(data.routines.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
-    if(data.habits?.length)   await supa.from('habits').upsert(data.habits.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
-    if(data.goals?.length)    await supa.from('goals').upsert(data.goals.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})));
-    if(data.sleepLogs && Object.keys(data.sleepLogs).length) await supa.from('sleep_logs').upsert({user_id:uid,data:data.sleepLogs,updated_at:now});
-    if(data.streak||data.lastDay) await supa.from('user_meta').upsert({user_id:uid,data:{streak:data.streak||0,lastDay:data.lastDay||''},updated_at:now});
-    toast('Data migrated to cloud ✓');
-  } catch(e) { toast('Migration error — check console'); console.error(e); }
+    const results = await Promise.all([
+      data.tasks?.length    ? supa.from('tasks').upsert(data.tasks.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
+      data.routines?.length ? supa.from('routines').upsert(data.routines.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
+      data.habits?.length   ? supa.from('habits').upsert(data.habits.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
+      data.goals?.length    ? supa.from('goals').upsert(data.goals.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}))) : Promise.resolve({error:null}),
+      Object.keys(data.sleepLogs||{}).length ? supa.from('sleep_logs').upsert({user_id:uid,data:data.sleepLogs,updated_at:now}) : Promise.resolve({error:null}),
+      (data.streak||data.lastDay) ? supa.from('user_meta').upsert({user_id:uid,data:{streak:data.streak||0,lastDay:data.lastDay||''},updated_at:now}) : Promise.resolve({error:null}),
+    ]);
+    const errors = results.filter(r=>r.error).map(r=>r.error.message);
+    if(errors.length) { console.error('Sync errors:',errors); toast('Sync error: '+errors[0]); }
+    else { console.log('All data synced to Supabase successfully'); toast('Data synced to cloud ✓'); }
+  } catch(e) { toast('Sync error: '+e.message); console.error(e); }
   hideSync();
 }
 
