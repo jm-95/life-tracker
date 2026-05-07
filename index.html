@@ -649,6 +649,14 @@ async function loadFromSupabase() {
   console.log('Loading for user:', currentUser.id);
   try {
     const uid = currentUser.id;
+    // Test connection first with a simple count
+    console.log('Testing connection...');
+    const test = await Promise.race([
+      supa.from('tasks').select('id', {count:'exact',head:true}).eq('user_id',uid),
+      new Promise((_,reject) => setTimeout(()=>reject(new Error('Query timeout after 10s')), 10000))
+    ]);
+    console.log('Connection test:', test.count, 'tasks, error:', test.error?.message);
+
     console.log('Querying tasks...');
     const t = await supa.from('tasks').select('id,data').eq('user_id',uid);
     console.log('Tasks result:', t.data?.length, 'error:', t.error?.message);
@@ -680,8 +688,17 @@ async function loadFromSupabase() {
     S.set('lt3_lastday',lastDay);
     console.log('Load complete — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
   } catch(e) {
-    console.error('Load error:', e);
+    console.error('Load error:', e.message);
     toast('Load error: '+e.message);
+    // Fall back to localStorage cache
+    tasks    = S.get('lt3_tasks')    || [];
+    routines = S.get('lt3_routines') || [];
+    habits   = S.get('lt3_habits')   || [];
+    goals    = S.get('lt3_goals')    || [];
+    sleepLogs= S.get('lt3_sleep')    || {};
+    streak   = S.get('lt3_streak')   || 0;
+    lastDay  = S.get('lt3_lastday')  || '';
+    console.log('Fell back to localStorage — tasks:',tasks.length);
   }
   hideSync();
 }
