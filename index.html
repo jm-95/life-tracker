@@ -2668,9 +2668,9 @@ function switchEntTab(tab){
   renderEntertainment();
 }
 function openEntModal(type,editId){
-  const prefix={movie:'m',tv:'tv',book:'b',activity:'a'}[type];
+  const prefix={movie:'m',tv:'tv',book:'b'}[type];
   editingEntId[type]=editId||null;
-  resetImgForm(prefix);
+  if(prefix) resetImgForm(prefix); // activities have no image form
   const overlayId='ent-'+type+'-overlay';
   if(editId){
     const item = (type==='movie'?entMovies:type==='tv'?entTV:type==='book'?entBooks:entActivities).find(x=>x.id===editId);
@@ -2892,34 +2892,54 @@ function renderEntertainment(){
     let html=`<button class="add-trigger" onclick="openEntModal('activity')" style="margin-bottom:1rem">+ Log activity</button>`;
     if(entActivities.length){
       const sorted=[...entActivities].sort((a,b)=>b.date>a.date?1:-1);
-      // Group by month
-      const byMonth={};
-      sorted.forEach(a=>{const m=a.date?a.date.slice(0,7):'Unknown';if(!byMonth[m])byMonth[m]=[];byMonth[m].push(a);});
-      Object.entries(byMonth).sort((a,b)=>b[0]>a[0]?1:-1).forEach(([month,acts])=>{
-        const [yr,mo]=month.split('-');
-        const label=mo?MONTHS[parseInt(mo)-1]+' '+yr:month;
-        html+=`<div class="s-label">${label}</div>`;
-        html+=acts.map(a=>{
-          const resultCls=a.result==='won'?'result-won':a.result==='lost'?'result-lost':'result-casual';
-          const resultLabel=a.result==='won'?'Won':a.result==='lost'?'Lost':'Casual';
-          return `<div class="ent-card">
-            <div class="activity-icon">${getActivityEmoji(a.name)}</div>
-            <div class="ent-body">
-              <div class="ent-title">${esc(a.name)}</div>
-              <div class="ent-meta">
-                <span>${a.date}</span>
-                ${a.duration?`<span>${a.duration} mins</span>`:''}
-                <span class="badge ${resultCls}">${resultLabel}</span>
-                ${a.people?`<span style="color:var(--text2)">with ${esc(a.people)}</span>`:''}
+      // Group by activity name for summary view
+      const byName={};
+      sorted.forEach(a=>{
+        const key=(a.name||'Unknown').toLowerCase();
+        if(!byName[key])byName[key]={name:a.name,sessions:[],wins:0,losses:0,casual:0};
+        byName[key].sessions.push(a);
+        if(a.result==='won')byName[key].wins++;
+        else if(a.result==='lost')byName[key].losses++;
+        else byName[key].casual++;
+      });
+      // Summary cards per activity
+      html+=`<div class="s-label">By Activity</div>`;
+      Object.values(byName).sort((a,b)=>b.sessions.length-a.sessions.length).forEach(g=>{
+        const last=g.sessions[0];
+        const wlHtml=g.wins||g.losses?`<span style="color:var(--green-text)">${g.wins}W</span> <span style="color:var(--red-text)">${g.losses}L</span>`:'';
+        html+=`<div class="ent-card" style="cursor:pointer" onclick="toggleActivityGroup('${g.name.replace(/'/g,"\\'")}')">
+          <div class="activity-icon">${getActivityEmoji(g.name)}</div>
+          <div class="ent-body">
+            <div class="ent-title">${esc(g.name)}</div>
+            <div class="ent-meta">
+              <span>${g.sessions.length} session${g.sessions.length>1?'s':''}</span>
+              ${wlHtml}
+              <span style="color:var(--text3)">Last: ${last.date}</span>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);padding-top:2px">▾</div>
+        </div>
+        <div id="activity-group-${g.name.replace(/\s+/g,'-')}" style="display:none;margin-bottom:8px">
+          ${g.sessions.map(a=>{
+            const resultCls=a.result==='won'?'result-won':a.result==='lost'?'result-lost':'result-casual';
+            const resultLabel=a.result==='won'?'Won':a.result==='lost'?'Lost':'Casual';
+            return `<div class="ent-card" style="margin-left:12px;border-left:2px solid var(--border2)">
+              <div class="ent-body">
+                <div class="ent-meta">
+                  <span>${a.date}</span>
+                  ${a.duration?`<span>${a.duration} mins</span>`:''}
+                  <span class="badge ${resultCls}">${resultLabel}</span>
+                  ${a.people?`<span style="color:var(--text2)">with ${esc(a.people)}</span>`:''}
+                </div>
+                ${a.note?`<div class="ent-note">${esc(a.note)}</div>`:''}
               </div>
-              ${a.note?`<div class="ent-note">${esc(a.note)}</div>`:''}
-            </div>
-            <div class="ti-actions">
-              <button class="icon-btn" onclick="openEntModal('activity','${a.id}')">✎</button>
-              <button class="icon-btn" onclick="openModal('Delete?','Remove this activity?',()=>deleteEntItem('activity','${a.id}'))">🗑</button>
-            </div>
-          </div>`;
-        }).join('');
+              <div class="ti-actions">
+                <button class="icon-btn" onclick="event.stopPropagation();openEntModal('activity','${a.id}')">✎</button>
+                <button class="icon-btn" onclick="event.stopPropagation();openModal('Delete?','Remove this session?',()=>deleteEntItem('activity','${a.id}'))">🗑</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`;
       });
     } else {
       html+=`<div class="empty-state"><div class="empty-icon">🏃</div><div class="empty-title">No activities yet</div><div class="empty-sub">Log sports, games and activities.</div></div>`;
@@ -2928,6 +2948,11 @@ function renderEntertainment(){
   }
 }
 
+function toggleActivityGroup(name){
+  const id='activity-group-'+name.replace(/\s+/g,'-');
+  const el=document.getElementById(id);
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
 function getActivityEmoji(name){
   const n=(name||'').toLowerCase();
   if(n.includes('pickleball')||n.includes('tennis')||n.includes('badminton'))return'🏓';
