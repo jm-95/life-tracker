@@ -227,6 +227,29 @@ textarea{resize:vertical;min-height:60px}
 /* ENTRY READER MODAL */
 .entry-reader-modal{max-height:85vh;overflow-y:auto}
 .entry-reader-body{font-size:15px;color:var(--text);line-height:1.8;white-space:pre-wrap;word-break:break-word}
+/* ENTERTAINMENT */
+.ent-tabs{display:flex;gap:4px;background:var(--bg3);border-radius:var(--r-sm);padding:3px;margin-bottom:1rem}
+.ent-tab{flex:1;text-align:center;padding:7px;font-size:13px;font-weight:500;border-radius:5px;cursor:pointer;border:none;background:none;color:var(--text3);font-family:'Instrument Sans',sans-serif;transition:all .15s}
+.ent-tab.active{background:var(--bg4);color:var(--text);border:1px solid var(--border2)}
+.ent-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:.85rem 1rem;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;transition:border-color .15s}
+.ent-card:hover{border-color:var(--border2)}
+.ent-poster{width:52px;height:75px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid var(--border2);background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;overflow:hidden}
+.ent-body{flex:1;min-width:0}
+.ent-title{font-size:14px;font-weight:500;color:var(--text)}
+.ent-meta{font-size:12px;color:var(--text3);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ent-note{font-size:12px;color:var(--text2);margin-top:5px;line-height:1.5;font-style:italic}
+.rating-pct{font-size:13px;font-weight:600;color:var(--accent2)}
+.status-badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:8px}
+.status-watching,.status-reading{background:#1A2A3D;color:#60A5FA}
+.status-completed,.status-read{background:var(--green-dim);color:var(--green-text)}
+.status-dropped{background:var(--red-dim);color:var(--red-text)}
+.status-watchlist,.status-toread{background:var(--bg4);color:var(--text3)}
+.season-row{display:flex;align-items:center;gap:8px;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)}
+.season-row:last-child{border-bottom:none}
+.activity-icon{width:36px;height:36px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.result-won{background:var(--green-dim);color:var(--green-text)}
+.result-lost{background:var(--red-dim);color:var(--red-text)}
+.result-casual{background:var(--bg4);color:var(--text3)}
 /* ENTRY FORM FIELDS */
 .entry-field-wrap{margin-bottom:.75rem}
 .entry-field-wrap:last-child{margin-bottom:0}
@@ -486,6 +509,116 @@ textarea{resize:vertical;min-height:60px}
   </div>
 </div>
 
+<!-- ENTERTAINMENT -->
+<div id="page-entertainment" class="page">
+  <div class="page-header"><div class="page-header-left"><div class="page-title">Entertainment</div><div class="page-sub">Movies, shows, books & activities</div></div></div>
+  <div class="ent-tabs">
+    <button class="ent-tab active" onclick="switchEntTab('movies')">🎬 Movies</button>
+    <button class="ent-tab" onclick="switchEntTab('tv')">📺 TV</button>
+    <button class="ent-tab" onclick="switchEntTab('books')">📚 Books</button>
+    <button class="ent-tab" onclick="switchEntTab('activities')">🏃 Activities</button>
+  </div>
+  <div id="ent-content"></div>
+</div>
+
+<!-- ENTERTAINMENT MODALS -->
+<div class="overlay" id="ent-movie-overlay" onclick="closeEntModal('movie')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-header"><h3 id="ent-movie-title">Add Movie</h3><button class="icon-btn" onclick="closeEntModal('movie')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><div class="form-label">Title</div><input type="text" id="m-title" placeholder="Movie title"/></div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Status</div><select id="m-status"><option value="watched">Watched</option><option value="watchlist">Watchlist</option></select></div>
+        <div style="flex:1"><div class="form-label">Date watched</div><input type="date" id="m-date"/></div>
+      </div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Your rating (0-100)</div><input type="number" id="m-rating" min="0" max="100" placeholder="e.g. 85"/></div>
+        <div style="flex:1"><div class="form-label">Genre (optional)</div><input type="text" id="m-genre" placeholder="e.g. Thriller"/></div>
+      </div>
+      <div><div class="form-label">Notes (optional)</div><textarea id="m-note" placeholder="Your thoughts..."></textarea></div>
+      <div><div class="form-label">Poster image (optional)</div><div id="m-img-area" class="img-upload-area" onclick="document.getElementById('m-img-input').click()"><div id="m-img-preview-wrap"></div><div id="m-img-placeholder" style="color:var(--text3);font-size:13px">📷 Upload poster</div></div><input type="file" id="m-img-input" accept="image/*" style="display:none" onchange="handleImgUpload(this,'m')"/></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeEntModal('movie')">Cancel</button><button class="btn btn-sm btn-accent" onclick="saveMovie()">Save</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="ent-tv-overlay" onclick="closeEntModal('tv')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-header"><h3 id="ent-tv-title">Add TV Show</h3><button class="icon-btn" onclick="closeEntModal('tv')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><div class="form-label">Title</div><input type="text" id="tv-title" placeholder="Show title"/></div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Status</div><select id="tv-status"><option value="watching">Watching</option><option value="completed">Completed</option><option value="dropped">Dropped</option><option value="watchlist">Watchlist</option></select></div>
+        <div style="flex:1"><div class="form-label">Overall rating (0-100)</div><input type="number" id="tv-rating" min="0" max="100" placeholder="e.g. 90"/></div>
+      </div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Current season</div><input type="number" id="tv-season" min="1" placeholder="1"/></div>
+        <div style="flex:1"><div class="form-label">Current episode</div><input type="number" id="tv-episode" min="1" placeholder="1"/></div>
+      </div>
+      <div><div class="form-label">Notes (optional)</div><textarea id="tv-note" placeholder="Your thoughts..."></textarea></div>
+      <div><div class="form-label">Poster image (optional)</div><div id="tv-img-area" class="img-upload-area" onclick="document.getElementById('tv-img-input').click()"><div id="tv-img-preview-wrap"></div><div id="tv-img-placeholder" style="color:var(--text3);font-size:13px">📷 Upload poster</div></div><input type="file" id="tv-img-input" accept="image/*" style="display:none" onchange="handleImgUpload(this,'tv')"/></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeEntModal('tv')">Cancel</button><button class="btn btn-sm btn-accent" onclick="saveTVShow()">Save</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="ent-book-overlay" onclick="closeEntModal('book')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-header"><h3 id="ent-book-title">Add Book</h3><button class="icon-btn" onclick="closeEntModal('book')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><div class="form-label">Title</div><input type="text" id="b-title" placeholder="Book title"/></div>
+      <div><div class="form-label">Author</div><input type="text" id="b-author" placeholder="Author name"/></div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Status</div><select id="b-status"><option value="read">Read</option><option value="reading">Reading</option><option value="toread">To Read</option></select></div>
+        <div style="flex:1"><div class="form-label">Date finished</div><input type="date" id="b-date"/></div>
+      </div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Rating (0-100)</div><input type="number" id="b-rating" min="0" max="100" placeholder="e.g. 88"/></div>
+        <div style="flex:1"><div class="form-label">Genre (optional)</div><input type="text" id="b-genre" placeholder="e.g. Fiction"/></div>
+      </div>
+      <div><div class="form-label">Highlight / Key takeaway (optional)</div><textarea id="b-note" placeholder="Best quote or key idea..."></textarea></div>
+      <div><div class="form-label">Cover image (optional)</div><div id="b-img-area" class="img-upload-area" onclick="document.getElementById('b-img-input').click()"><div id="b-img-preview-wrap"></div><div id="b-img-placeholder" style="color:var(--text3);font-size:13px">📷 Upload cover</div></div><input type="file" id="b-img-input" accept="image/*" style="display:none" onchange="handleImgUpload(this,'b')"/></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeEntModal('book')">Cancel</button><button class="btn btn-sm btn-accent" onclick="saveBook()">Save</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="ent-activity-overlay" onclick="closeEntModal('activity')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-height:85vh;overflow-y:auto">
+    <div class="modal-header"><h3 id="ent-activity-title">Log Activity</h3><button class="icon-btn" onclick="closeEntModal('activity')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><div class="form-label">Activity name</div><input type="text" id="a-name" placeholder="e.g. Pickleball, Carrom, Chess"/></div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Date</div><input type="date" id="a-date"/></div>
+        <div style="flex:1"><div class="form-label">Duration (mins)</div><input type="number" id="a-duration" min="1" placeholder="60"/></div>
+      </div>
+      <div><div class="form-label">Played with (optional)</div><input type="text" id="a-people" placeholder="e.g. Chirag, Krunal"/></div>
+      <div><div class="form-label">Result</div><select id="a-result"><option value="casual">Casual / No competition</option><option value="won">Won</option><option value="lost">Lost</option></select></div>
+      <div><div class="form-label">Notes (optional)</div><textarea id="a-note" placeholder="e.g. First time trying pickleball..."></textarea></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeEntModal('activity')">Cancel</button><button class="btn btn-sm btn-accent" onclick="saveActivity()">Save</button></div>
+  </div>
+</div>
+
+<!-- TV Season Log Modal -->
+<div class="overlay" id="ent-season-overlay" onclick="document.getElementById('ent-season-overlay').classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header"><h3>Log Season</h3><button class="icon-btn" onclick="document.getElementById('ent-season-overlay').classList.remove('open')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Season #</div><input type="number" id="sl-season" min="1" placeholder="1"/></div>
+        <div style="flex:1"><div class="form-label">Episodes watched</div><input type="number" id="sl-episodes" min="1" placeholder="10"/></div>
+      </div>
+      <div class="form-row">
+        <div style="flex:1"><div class="form-label">Season rating (0-100)</div><input type="number" id="sl-rating" min="0" max="100" placeholder="85"/></div>
+        <div style="flex:1"><div class="form-label">Status</div><select id="sl-status"><option value="completed">Completed</option><option value="watching">Watching</option></select></div>
+      </div>
+      <div><div class="form-label">Notes (optional)</div><textarea id="sl-note" placeholder="Thoughts on this season..."></textarea></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="document.getElementById('ent-season-overlay').classList.remove('open')">Cancel</button><button class="btn btn-sm btn-accent" onclick="saveSeasonLog()">Save</button></div>
+  </div>
+</div>
+
 <!-- JOURNAL ENTRY READER -->
 <div class="overlay" id="entry-reader-overlay" onclick="closeEntryReader()">
   <div class="modal entry-reader-modal" onclick="event.stopPropagation()">
@@ -512,6 +645,7 @@ textarea{resize:vertical;min-height:60px}
   <button class="nav-btn" onclick="showPage('habits')" id="nav-habits"><span class="icon">◈</span><span>Habits</span></button>
   <button class="nav-btn" onclick="showPage('goals')" id="nav-goals"><span class="icon">◎</span><span>Goals</span></button>
   <button class="nav-btn" onclick="showPage('journal')" id="nav-journal"><span class="icon">✦</span><span>Journal</span></button>
+  <button class="nav-btn" onclick="showPage('entertainment')" id="nav-entertainment"><span class="icon">🎬</span><span>Life</span></button>
 </nav>
 
 <!-- CONFIRM MODAL -->
@@ -653,7 +787,7 @@ let activeGoalId = null, pendingNoteId = null;
 let editingId = { task:null, routine:null, habit:null, goal:null };
 const habitMonthOffset = {};
 let calYear, calMonth;
-const imgBuf = { t:null, r:null, h:null, g:null };
+const imgBuf = { t:null, r:null, h:null, g:null, m:null, tv:null, b:null };
 
 const FREQ_DAYS  = {daily:1,weekly:7,biweekly:14,monthly:30,custom:null};
 const FREQ_LABEL = {daily:'Daily',weekly:'Weekly',biweekly:'2 weeks',monthly:'Monthly',custom:'Custom'};
@@ -918,7 +1052,7 @@ function showPage(name) {
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   document.getElementById('nav-'+name).classList.add('active');
-  ({dashboard:renderDashboard,tasks:renderTasks,routines:renderRoutines,habits:renderHabits,goals:renderGoals,journal:renderJournal})[name]();
+  ({dashboard:renderDashboard,tasks:renderTasks,routines:renderRoutines,habits:renderHabits,goals:renderGoals,journal:renderJournal,entertainment:renderEntertainment})[name]();
 }
 
 // ── SETTINGS ──────────────────────────────────────────────
@@ -1141,6 +1275,20 @@ function renderDashboard() {
   html+=sec('📋 Tasks due today',dueT,'amber','tasks',t=>'Due '+(t.due===today()?'today':t.due));
   html+=sec('◈ Habits pending',pendH,'blue','habits',h=>habitFreqLabel(h));
   html+=sec('◎ Goals close',nearG,'green','goals',g=>g.current+'/'+g.target+' '+esc(g.unit)+' ('+Math.round(g.current/g.target*100)+'%)');
+  // Entertainment summary
+  const lastWatched=[...entMovies.filter(m=>m.status==='watched')].sort((a,b)=>b.date>a.date?1:-1)[0];
+  const lastActivity=[...entActivities].sort((a,b)=>b.date>a.date?1:-1)[0];
+  const currentlyWatching=entTV.filter(s=>s.status==='watching');
+  const currentlyReading=entBooks.filter(b=>b.status==='reading');
+  if(lastWatched||lastActivity||currentlyWatching.length||currentlyReading.length){
+    let entHtml=`<div class="dash-section"><div class="dash-section-title">🎬 Entertainment</div>`;
+    if(currentlyWatching.length) entHtml+=`<div class="dash-item" onclick="showPage('entertainment')"><div class="dash-dot blue"></div><div class="dash-body"><div class="dash-text">Watching: ${esc(currentlyWatching[0].title)}</div><div class="dash-sub">S${currentlyWatching[0].currentSeason}E${currentlyWatching[0].currentEpisode}</div></div><div style="font-size:12px;color:var(--text3)">→</div></div>`;
+    if(currentlyReading.length) entHtml+=`<div class="dash-item" onclick="showPage('entertainment')"><div class="dash-dot green"></div><div class="dash-body"><div class="dash-text">Reading: ${esc(currentlyReading[0].title)}</div><div class="dash-sub">${esc(currentlyReading[0].author||'')}</div></div><div style="font-size:12px;color:var(--text3)">→</div></div>`;
+    if(lastWatched) entHtml+=`<div class="dash-item" onclick="showPage('entertainment')"><div class="dash-dot amber"></div><div class="dash-body"><div class="dash-text">Last watched: ${esc(lastWatched.title)}</div><div class="dash-sub">${lastWatched.date}${lastWatched.rating!=null?' · '+lastWatched.rating+'%':''}</div></div><div style="font-size:12px;color:var(--text3)">→</div></div>`;
+    if(lastActivity) entHtml+=`<div class="dash-item" onclick="showPage('entertainment')"><div class="dash-dot red"></div><div class="dash-body"><div class="dash-text">Last activity: ${esc(lastActivity.name)}</div><div class="dash-sub">${lastActivity.date}${lastActivity.people?' · with '+esc(lastActivity.people):''}</div></div><div style="font-size:12px;color:var(--text3)">→</div></div>`;
+    entHtml+='</div>';
+    html+=entHtml;
+  }
 
   document.getElementById('dash-content').innerHTML = html;
   renderCalendar();
@@ -2325,7 +2473,341 @@ function openGoalGraph(id) {
 }
 function closeGoalGraph(){ document.getElementById('goal-graph-overlay').classList.remove('open'); }
 
+// ── ENTERTAINMENT ─────────────────────────────────────────
+let entMovies   = [];
+let entTV       = [];
+let entBooks    = [];
+let entActivities = [];
+let entTab = 'movies';
+let editingEntId = { movie:null, tv:null, book:null, activity:null, season:null };
+
+function loadEntFromStorage(){
+  entMovies    = S.get('lt3_ent_movies')     || [];
+  entTV        = S.get('lt3_ent_tv')         || [];
+  entBooks     = S.get('lt3_ent_books')      || [];
+  entActivities= S.get('lt3_ent_activities') || [];
+}
+function saveEntMovies()     { S.set('lt3_ent_movies',    entMovies);     syncEntTable('ent_movies',    entMovies); }
+function saveEntTV()         { S.set('lt3_ent_tv',        entTV);         syncEntTable('ent_tv',        entTV); }
+function saveEntBooks()      { S.set('lt3_ent_books',     entBooks);      syncEntTable('ent_books',     entBooks); }
+function saveEntActivities() { S.set('lt3_ent_activities',entActivities); syncEntTable('ent_activities',entActivities); }
+
+async function syncEntTable(table, arr) {
+  if(!currentUser) return;
+  const uid = currentUser.id;
+  const now = new Date().toISOString();
+  // Store entire array as a single row per user per table
+  try {
+    await dbUpsert(table, {id: uid, user_id: uid, data: arr, updated_at: now});
+  } catch(e) { console.error('Ent sync error', table, e); }
+}
+async function loadEntFromSupabase() {
+  if(!currentUser||!currentToken) return;
+  const uid = currentUser.id;
+  const headers = await getAuthHeaders();
+  const base = SUPA_URL+'/rest/v1';
+  try {
+    const [m,tv,b,a] = await Promise.all([
+      fetch(`${base}/ent_movies?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_tv?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_books?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_activities?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
+    ]);
+    if(Array.isArray(m)&&m.length)    entMovies    = m[0].data||[];
+    if(Array.isArray(tv)&&tv.length)  entTV        = tv[0].data||[];
+    if(Array.isArray(b)&&b.length)    entBooks     = b[0].data||[];
+    if(Array.isArray(a)&&a.length)    entActivities= a[0].data||[];
+    S.set('lt3_ent_movies',entMovies); S.set('lt3_ent_tv',entTV);
+    S.set('lt3_ent_books',entBooks); S.set('lt3_ent_activities',entActivities);
+  } catch(e) { console.error('Ent load error',e); loadEntFromStorage(); }
+}
+
+function switchEntTab(tab){
+  entTab=tab;
+  document.querySelectorAll('.ent-tab').forEach((b,i)=>{
+    b.classList.toggle('active',['movies','tv','books','activities'][i]===tab);
+  });
+  renderEntertainment();
+}
+function openEntModal(type,editId){
+  const prefix={movie:'m',tv:'tv',book:'b',activity:'a'}[type];
+  editingEntId[type]=editId||null;
+  resetImgForm(prefix);
+  const overlayId='ent-'+type+'-overlay';
+  if(editId){
+    const item = (type==='movie'?entMovies:type==='tv'?entTV:type==='book'?entBooks:entActivities).find(x=>x.id===editId);
+    if(item){
+      if(type==='movie'){
+        document.getElementById('m-title').value=item.title||'';
+        document.getElementById('m-status').value=item.status||'watched';
+        document.getElementById('m-date').value=item.date||'';
+        document.getElementById('m-rating').value=item.rating||'';
+        document.getElementById('m-genre').value=item.genre||'';
+        document.getElementById('m-note').value=item.note||'';
+        if(item.image)loadImgIntoForm('m',item.image);
+      } else if(type==='tv'){
+        document.getElementById('tv-title').value=item.title||'';
+        document.getElementById('tv-status').value=item.status||'watching';
+        document.getElementById('tv-rating').value=item.rating||'';
+        document.getElementById('tv-season').value=item.currentSeason||'';
+        document.getElementById('tv-episode').value=item.currentEpisode||'';
+        document.getElementById('tv-note').value=item.note||'';
+        if(item.image)loadImgIntoForm('tv',item.image);
+      } else if(type==='book'){
+        document.getElementById('b-title').value=item.title||'';
+        document.getElementById('b-author').value=item.author||'';
+        document.getElementById('b-status').value=item.status||'read';
+        document.getElementById('b-date').value=item.date||'';
+        document.getElementById('b-rating').value=item.rating||'';
+        document.getElementById('b-genre').value=item.genre||'';
+        document.getElementById('b-note').value=item.note||'';
+        if(item.image)loadImgIntoForm('b',item.image);
+      } else if(type==='activity'){
+        document.getElementById('a-name').value=item.name||'';
+        document.getElementById('a-date').value=item.date||'';
+        document.getElementById('a-duration').value=item.duration||'';
+        document.getElementById('a-people').value=item.people||'';
+        document.getElementById('a-result').value=item.result||'casual';
+        document.getElementById('a-note').value=item.note||'';
+      }
+      document.getElementById('ent-'+type+'-title').textContent='Edit '+(type==='tv'?'TV Show':type.charAt(0).toUpperCase()+type.slice(1));
+    }
+  } else {
+    // Reset form
+    if(type==='movie'){['m-title','m-genre','m-note'].forEach(id=>document.getElementById(id).value='');document.getElementById('m-date').value=today();document.getElementById('m-rating').value='';document.getElementById('m-status').value='watched';}
+    else if(type==='tv'){['tv-title','tv-note'].forEach(id=>document.getElementById(id).value='');document.getElementById('tv-rating').value='';document.getElementById('tv-season').value='1';document.getElementById('tv-episode').value='1';document.getElementById('tv-status').value='watching';}
+    else if(type==='book'){['b-title','b-author','b-genre','b-note'].forEach(id=>document.getElementById(id).value='');document.getElementById('b-date').value=today();document.getElementById('b-rating').value='';document.getElementById('b-status').value='read';}
+    else if(type==='activity'){['a-name','a-people','a-note'].forEach(id=>document.getElementById(id).value='');document.getElementById('a-date').value=today();document.getElementById('a-duration').value='';document.getElementById('a-result').value='casual';}
+    document.getElementById('ent-'+type+'-title').textContent='Add '+(type==='tv'?'TV Show':type==='activity'?'Activity':type.charAt(0).toUpperCase()+type.slice(1));
+  }
+  document.getElementById(overlayId).classList.add('open');
+}
+function closeEntModal(type){ document.getElementById('ent-'+type+'-overlay').classList.remove('open'); }
+
+function saveMovie(){
+  const title=document.getElementById('m-title').value.trim();if(!title)return;
+  const item={id:editingEntId.movie||uid(),title,status:document.getElementById('m-status').value,date:document.getElementById('m-date').value,rating:document.getElementById('m-rating').value?parseInt(document.getElementById('m-rating').value):null,genre:document.getElementById('m-genre').value.trim(),note:document.getElementById('m-note').value.trim(),image:imgBuf.m||null,added:today()};
+  if(editingEntId.movie){const i=entMovies.findIndex(x=>x.id===editingEntId.movie);entMovies[i]=item;}
+  else entMovies.unshift(item);
+  saveEntMovies();closeEntModal('movie');renderEntertainment();toast('Movie saved ✓');
+}
+function saveTVShow(){
+  const title=document.getElementById('tv-title').value.trim();if(!title)return;
+  const item={id:editingEntId.tv||uid(),title,status:document.getElementById('tv-status').value,rating:document.getElementById('tv-rating').value?parseInt(document.getElementById('tv-rating').value):null,currentSeason:parseInt(document.getElementById('tv-season').value)||1,currentEpisode:parseInt(document.getElementById('tv-episode').value)||1,note:document.getElementById('tv-note').value.trim(),image:imgBuf.tv||null,seasons:[],added:today()};
+  if(editingEntId.tv){const i=entTV.findIndex(x=>x.id===editingEntId.tv);if(i>=0){item.seasons=entTV[i].seasons||[];entTV[i]=item;}}
+  else entTV.unshift(item);
+  saveEntTV();closeEntModal('tv');renderEntertainment();toast('Show saved ✓');
+}
+function saveBook(){
+  const title=document.getElementById('b-title').value.trim();if(!title)return;
+  const item={id:editingEntId.book||uid(),title,author:document.getElementById('b-author').value.trim(),status:document.getElementById('b-status').value,date:document.getElementById('b-date').value,rating:document.getElementById('b-rating').value?parseInt(document.getElementById('b-rating').value):null,genre:document.getElementById('b-genre').value.trim(),note:document.getElementById('b-note').value.trim(),image:imgBuf.b||null,added:today()};
+  if(editingEntId.book){const i=entBooks.findIndex(x=>x.id===editingEntId.book);entBooks[i]=item;}
+  else entBooks.unshift(item);
+  saveEntBooks();closeEntModal('book');renderEntertainment();toast('Book saved ✓');
+}
+function saveActivity(){
+  const name=document.getElementById('a-name').value.trim();if(!name)return;
+  const item={id:editingEntId.activity||uid(),name,date:document.getElementById('a-date').value||today(),duration:parseInt(document.getElementById('a-duration').value)||null,people:document.getElementById('a-people').value.trim(),result:document.getElementById('a-result').value,note:document.getElementById('a-note').value.trim()};
+  if(editingEntId.activity){const i=entActivities.findIndex(x=>x.id===editingEntId.activity);entActivities[i]=item;}
+  else entActivities.unshift(item);
+  saveEntActivities();closeEntModal('activity');renderEntertainment();toast('Activity logged ✓');
+}
+
+// Season logging
+let activeSeasonShowId = null;
+function openSeasonLog(showId){
+  activeSeasonShowId=showId;
+  ['sl-season','sl-episodes','sl-rating','sl-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sl-status').value='completed';
+  document.getElementById('ent-season-overlay').classList.add('open');
+}
+function saveSeasonLog(){
+  const show=entTV.find(x=>x.id===activeSeasonShowId);if(!show)return;
+  if(!show.seasons)show.seasons=[];
+  const s={season:parseInt(document.getElementById('sl-season').value)||1,episodes:parseInt(document.getElementById('sl-episodes').value)||0,rating:document.getElementById('sl-rating').value?parseInt(document.getElementById('sl-rating').value):null,status:document.getElementById('sl-status').value,note:document.getElementById('sl-note').value.trim(),date:today()};
+  const existing=show.seasons.findIndex(x=>x.season===s.season);
+  if(existing>=0)show.seasons[existing]=s;else show.seasons.push(s);
+  show.seasons.sort((a,b)=>a.season-b.season);
+  saveEntTV();document.getElementById('ent-season-overlay').classList.remove('open');renderEntertainment();toast('Season logged ✓');
+}
+
+function deleteEntItem(type,id){
+  if(type==='movie'){entMovies=entMovies.filter(x=>x.id!==id);saveEntMovies();}
+  else if(type==='tv'){entTV=entTV.filter(x=>x.id!==id);saveEntTV();}
+  else if(type==='book'){entBooks=entBooks.filter(x=>x.id!==id);saveEntBooks();}
+  else if(type==='activity'){entActivities=entActivities.filter(x=>x.id!==id);saveEntActivities();}
+  renderEntertainment();toast('Removed');
+}
+
+function ratingColor(r){if(r==null)return'var(--text3)';if(r>=80)return'var(--green)';if(r>=60)return'var(--accent2)';return'var(--red)';}
+
+function renderEntertainment(){
+  const c = document.getElementById('ent-content');
+  if(entTab==='movies'){
+    const watched=entMovies.filter(m=>m.status==='watched').sort((a,b)=>b.date>a.date?1:-1);
+    const watchlist=entMovies.filter(m=>m.status==='watchlist');
+    let html=`<button class="add-trigger" onclick="openEntModal('movie')" style="margin-bottom:1rem">+ Add movie</button>`;
+    if(watched.length){
+      html+=`<div class="s-label">Watched (${watched.length})</div>`;
+      html+=watched.map(m=>`<div class="ent-card">
+        <div class="ent-poster">${m.image?`<img src="${m.image}" style="width:52px;height:75px;object-fit:cover;border-radius:6px" alt=""/>`:'🎬'}</div>
+        <div class="ent-body">
+          <div class="ent-title">${esc(m.title)}</div>
+          <div class="ent-meta">
+            ${m.date?`<span>${m.date}</span>`:''}
+            ${m.genre?`<span class="badge badge-purple">${esc(m.genre)}</span>`:''}
+            ${m.rating!=null?`<span class="rating-pct" style="color:${ratingColor(m.rating)}">${m.rating}%</span>`:''}
+          </div>
+          ${m.note?`<div class="ent-note">${esc(m.note)}</div>`:''}
+        </div>
+        <div class="ti-actions">
+          <button class="icon-btn" onclick="openEntModal('movie','${m.id}')">✎</button>
+          <button class="icon-btn" onclick="openModal('Delete?','Remove this movie?',()=>deleteEntItem('movie','${m.id}'))">🗑</button>
+        </div>
+      </div>`).join('');
+    }
+    if(watchlist.length){
+      html+=`<div class="s-label">Watchlist (${watchlist.length})</div>`;
+      html+=watchlist.map(m=>`<div class="ent-card">
+        <div class="ent-poster">${m.image?`<img src="${m.image}" style="width:52px;height:75px;object-fit:cover;border-radius:6px" alt=""/>`:'🎬'}</div>
+        <div class="ent-body">
+          <div class="ent-title">${esc(m.title)}</div>
+          <div class="ent-meta">${m.genre?`<span class="badge badge-purple">${esc(m.genre)}</span>`:''}<span class="status-badge status-watchlist">Watchlist</span></div>
+          ${m.note?`<div class="ent-note">${esc(m.note)}</div>`:''}
+        </div>
+        <div class="ti-actions">
+          <button class="icon-btn" onclick="openEntModal('movie','${m.id}')">✎</button>
+          <button class="icon-btn" onclick="openModal('Delete?','Remove?',()=>deleteEntItem('movie','${m.id}'))">🗑</button>
+        </div>
+      </div>`).join('');
+    }
+    if(!entMovies.length) html+=`<div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">No movies yet</div><div class="empty-sub">Start logging what you watch.</div></div>`;
+    c.innerHTML=html;
+  } else if(entTab==='tv'){
+    const grouped={watching:[],completed:[],dropped:[],watchlist:[]};
+    entTV.forEach(s=>{(grouped[s.status]||grouped.watchlist).push(s);});
+    let html=`<button class="add-trigger" onclick="openEntModal('tv')" style="margin-bottom:1rem">+ Add TV show</button>`;
+    const renderShows=(shows,label)=>{
+      if(!shows.length)return'';
+      return `<div class="s-label">${label} (${shows.length})</div>`+shows.map(s=>{
+        const statusCls='status-badge status-'+s.status;
+        const seasonsHtml=s.seasons&&s.seasons.length?`<div style="margin-top:.5rem;border-top:1px solid var(--border);padding-top:.5rem">`+s.seasons.map(se=>`<div class="season-row"><span style="min-width:70px">S${se.season}</span><span>${se.episodes} eps</span>${se.rating!=null?`<span class="rating-pct" style="color:${ratingColor(se.rating)}">${se.rating}%</span>`:''}<span class="status-badge status-${se.status}" style="font-size:10px">${se.status}</span>${se.note?`<span style="font-size:11px;color:var(--text3);flex:1;text-align:right">${esc(se.note)}</span>`:''}</div>`).join('')+`</div>`:'';
+        return `<div class="ent-card" style="flex-direction:column;gap:0">
+          <div style="display:flex;gap:12px;align-items:flex-start;width:100%">
+            <div class="ent-poster">${s.image?`<img src="${s.image}" style="width:52px;height:75px;object-fit:cover;border-radius:6px" alt=""/>`:'📺'}</div>
+            <div class="ent-body">
+              <div class="ent-title">${esc(s.title)}</div>
+              <div class="ent-meta">
+                <span class="${statusCls}">${s.status.charAt(0).toUpperCase()+s.status.slice(1)}</span>
+                ${s.status==='watching'?`<span style="font-size:12px;color:var(--text3)">S${s.currentSeason}E${s.currentEpisode}</span>`:''}
+                ${s.rating!=null?`<span class="rating-pct" style="color:${ratingColor(s.rating)}">${s.rating}%</span>`:''}
+              </div>
+              ${s.note?`<div class="ent-note">${esc(s.note)}</div>`:''}
+            </div>
+            <div class="ti-actions">
+              <button class="icon-btn" onclick="openSeasonLog('${s.id}')" title="Log season" style="font-size:13px">S+</button>
+              <button class="icon-btn" onclick="openEntModal('tv','${s.id}')">✎</button>
+              <button class="icon-btn" onclick="openModal('Delete?','Remove this show?',()=>deleteEntItem('tv','${s.id}'))">🗑</button>
+            </div>
+          </div>
+          ${seasonsHtml}
+        </div>`;
+      }).join('');
+    };
+    html+=renderShows(grouped.watching,'Watching');
+    html+=renderShows(grouped.completed,'Completed');
+    html+=renderShows(grouped.dropped,'Dropped');
+    html+=renderShows(grouped.watchlist,'Watchlist');
+    if(!entTV.length) html+=`<div class="empty-state"><div class="empty-icon">📺</div><div class="empty-title">No shows yet</div><div class="empty-sub">Start tracking what you're watching.</div></div>`;
+    c.innerHTML=html;
+  } else if(entTab==='books'){
+    const read=entBooks.filter(b=>b.status==='read').sort((a,b)=>b.date>a.date?1:-1);
+    const reading=entBooks.filter(b=>b.status==='reading');
+    const toread=entBooks.filter(b=>b.status==='toread');
+    let html=`<button class="add-trigger" onclick="openEntModal('book')" style="margin-bottom:1rem">+ Add book</button>`;
+    const renderBooks=(books,label)=>{
+      if(!books.length)return'';
+      return `<div class="s-label">${label} (${books.length})</div>`+books.map(b=>`<div class="ent-card">
+        <div class="ent-poster" style="height:68px;width:48px">${b.image?`<img src="${b.image}" style="width:48px;height:68px;object-fit:cover;border-radius:4px" alt=""/>`:'📚'}</div>
+        <div class="ent-body">
+          <div class="ent-title">${esc(b.title)}</div>
+          <div class="ent-meta">
+            ${b.author?`<span style="color:var(--text2)">${esc(b.author)}</span>`:''}
+            ${b.genre?`<span class="badge badge-purple">${esc(b.genre)}</span>`:''}
+            ${b.rating!=null?`<span class="rating-pct" style="color:${ratingColor(b.rating)}">${b.rating}%</span>`:''}
+            ${b.date?`<span>${b.date}</span>`:''}
+          </div>
+          ${b.note?`<div class="ent-note">"${esc(b.note)}"</div>`:''}
+        </div>
+        <div class="ti-actions">
+          <button class="icon-btn" onclick="openEntModal('book','${b.id}')">✎</button>
+          <button class="icon-btn" onclick="openModal('Delete?','Remove this book?',()=>deleteEntItem('book','${b.id}'))">🗑</button>
+        </div>
+      </div>`).join('');
+    };
+    html+=renderBooks(reading,'Currently Reading');
+    html+=renderBooks(read,'Read');
+    html+=renderBooks(toread,'To Read');
+    if(!entBooks.length) html+=`<div class="empty-state"><div class="empty-icon">📚</div><div class="empty-title">No books yet</div><div class="empty-sub">Start logging what you read.</div></div>`;
+    c.innerHTML=html;
+  } else if(entTab==='activities'){
+    let html=`<button class="add-trigger" onclick="openEntModal('activity')" style="margin-bottom:1rem">+ Log activity</button>`;
+    if(entActivities.length){
+      const sorted=[...entActivities].sort((a,b)=>b.date>a.date?1:-1);
+      // Group by month
+      const byMonth={};
+      sorted.forEach(a=>{const m=a.date?a.date.slice(0,7):'Unknown';if(!byMonth[m])byMonth[m]=[];byMonth[m].push(a);});
+      Object.entries(byMonth).sort((a,b)=>b[0]>a[0]?1:-1).forEach(([month,acts])=>{
+        const [yr,mo]=month.split('-');
+        const label=mo?MONTHS[parseInt(mo)-1]+' '+yr:month;
+        html+=`<div class="s-label">${label}</div>`;
+        html+=acts.map(a=>{
+          const resultCls=a.result==='won'?'result-won':a.result==='lost'?'result-lost':'result-casual';
+          const resultLabel=a.result==='won'?'Won':a.result==='lost'?'Lost':'Casual';
+          return `<div class="ent-card">
+            <div class="activity-icon">${getActivityEmoji(a.name)}</div>
+            <div class="ent-body">
+              <div class="ent-title">${esc(a.name)}</div>
+              <div class="ent-meta">
+                <span>${a.date}</span>
+                ${a.duration?`<span>${a.duration} mins</span>`:''}
+                <span class="badge ${resultCls}">${resultLabel}</span>
+                ${a.people?`<span style="color:var(--text2)">with ${esc(a.people)}</span>`:''}
+              </div>
+              ${a.note?`<div class="ent-note">${esc(a.note)}</div>`:''}
+            </div>
+            <div class="ti-actions">
+              <button class="icon-btn" onclick="openEntModal('activity','${a.id}')">✎</button>
+              <button class="icon-btn" onclick="openModal('Delete?','Remove this activity?',()=>deleteEntItem('activity','${a.id}'))">🗑</button>
+            </div>
+          </div>`;
+        }).join('');
+      });
+    } else {
+      html+=`<div class="empty-state"><div class="empty-icon">🏃</div><div class="empty-title">No activities yet</div><div class="empty-sub">Log sports, games and activities.</div></div>`;
+    }
+    c.innerHTML=html;
+  }
+}
+
+function getActivityEmoji(name){
+  const n=(name||'').toLowerCase();
+  if(n.includes('pickleball')||n.includes('tennis')||n.includes('badminton'))return'🏓';
+  if(n.includes('cricket'))return'🏏';
+  if(n.includes('football')||n.includes('soccer'))return'⚽';
+  if(n.includes('basketball'))return'🏀';
+  if(n.includes('chess'))return'♟';
+  if(n.includes('carrom'))return'🎯';
+  if(n.includes('card')||n.includes('poker'))return'🃏';
+  if(n.includes('board'))return'🎲';
+  if(n.includes('run')||n.includes('jog'))return'🏃';
+  if(n.includes('swim'))return'🏊';
+  if(n.includes('gym')||n.includes('workout'))return'💪';
+  return'🎮';
+}
+
 // ── SEED / MIGRATE ────────────────────────────────────────
+loadEntFromStorage();
 goals.forEach(g=>{if(!g.logs)g.logs=[];});
 habits.forEach(h=>{if(!h.entries)h.entries=[];});
 routines.forEach(r=>{if(!r.history)r.history=r.lastDone?[r.lastDone]:[];});
@@ -2341,6 +2823,7 @@ async function initApp(user, token) {
   document.getElementById('settings-user-email').textContent = user.email || 'Signed in';
   hideLoginScreen();
   await loadFromSupabase();
+  await loadEntFromSupabase();
   // Check if user has localStorage data that hasn't been migrated yet
   const localTasks    = S.get('lt3_tasks')    || [];
   const localRoutines = S.get('lt3_routines') || [];
