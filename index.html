@@ -1577,6 +1577,29 @@ function toggleRoutine(id){
   updateRoutineStreak();saveRoutinesDB();renderRoutines();
 }
 function deleteRoutine(id){routines=routines.filter(x=>x.id!==id);saveRoutinesDB();renderRoutines();toast('Routine removed');}
+function openRoutineBackdate(id){
+  const r=routines.find(x=>x.id===id);if(!r)return;
+  openModal(
+    'Log past completion',
+    'Pick the date you completed "'+r.name+'".',
+    ()=>{
+      const ds=document.getElementById('routine-backdate-input').value;
+      if(!ds)return;
+      if(!r.history)r.history=[];
+      if(!r.history.includes(ds))r.history.push(ds);
+      // Update lastDone if this is more recent
+      if(!r.lastDone||ds>r.lastDone){r.prevDone=r.lastDone;r.lastDone=ds;}
+      saveRoutinesDB();renderRoutines();toast('Logged ✓');
+    },
+    'Log it','btn-accent'
+  );
+  setTimeout(()=>{
+    const msgEl=document.getElementById('modal-msg');
+    msgEl.innerHTML=`Pick the date you completed "<strong>${esc(r.name)}</strong>".
+      <br><br><input type="date" id="routine-backdate-input" max="${today()}" value="${yesterday()}"
+      style="width:100%;margin-top:4px;background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 12px;color:var(--text);font-family:inherit;font-size:14px"/>`;
+  },50);
+}
 function switchRoutineTab(tab){
   routineTab=tab;
   document.querySelectorAll('#page-routines .tab-btn').forEach((b,i)=>b.classList.toggle('active',['pending','done','all'][i]===tab));
@@ -1661,6 +1684,7 @@ function renderRoutines(){
           ${statsHtml}
         </div>
         <div class="ti-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn" onclick="openRoutineBackdate('${r.id}')" title="Log past date" style="font-size:13px">📅</button>
           <button class="icon-btn" onclick="openRoutineForm('${r.id}')" title="Edit">✎</button>
           <button class="icon-btn" onclick="openModal('Delete?','Remove this routine?',()=>deleteRoutine('${r.id}'))">🗑</button>
         </div>
@@ -2574,10 +2598,10 @@ function loadEntFromStorage(){
   entBooks     = S.get('lt3_ent_books')      || [];
   entActivities= S.get('lt3_ent_activities') || [];
 }
-function saveEntMovies()     { S.set('lt3_ent_movies',    entMovies);     syncEntTable('ent_movies',    entMovies); }
-function saveEntTV()         { S.set('lt3_ent_tv',        entTV);         syncEntTable('ent_tv',        entTV); }
-function saveEntBooks()      { S.set('lt3_ent_books',     entBooks);      syncEntTable('ent_books',     entBooks); }
-function saveEntActivities() { S.set('lt3_ent_activities',entActivities); syncEntTable('ent_activities',entActivities); }
+function saveEntMovies()     { const now=new Date().toISOString(); S.set('lt3_ent_movies',entMovies);     S.set('lt3_ent_movies_ts',now);     syncEntTable('ent_movies',    entMovies); }
+function saveEntTV()         { const now=new Date().toISOString(); S.set('lt3_ent_tv',entTV);             S.set('lt3_ent_tv_ts',now);         syncEntTable('ent_tv',        entTV); }
+function saveEntBooks()      { const now=new Date().toISOString(); S.set('lt3_ent_books',entBooks);       S.set('lt3_ent_books_ts',now);      syncEntTable('ent_books',     entBooks); }
+function saveEntActivities() { const now=new Date().toISOString(); S.set('lt3_ent_activities',entActivities); S.set('lt3_ent_activities_ts',now); syncEntTable('ent_activities',entActivities); }
 
 async function syncEntTable(table, arr) {
   if(!currentUser) return;
@@ -2595,17 +2619,44 @@ async function loadEntFromSupabase() {
   const base = SUPA_URL+'/rest/v1';
   try {
     const [m,tv,b,a] = await Promise.all([
-      fetch(`${base}/ent_movies?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
-      fetch(`${base}/ent_tv?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
-      fetch(`${base}/ent_books?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
-      fetch(`${base}/ent_activities?select=data&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_movies?select=data,updated_at&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_tv?select=data,updated_at&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_books?select=data,updated_at&id=eq.${uid}`,{headers}).then(x=>x.json()),
+      fetch(`${base}/ent_activities?select=data,updated_at&id=eq.${uid}`,{headers}).then(x=>x.json()),
     ]);
-    if(Array.isArray(m)&&m.length)    entMovies    = m[0].data||[];
-    if(Array.isArray(tv)&&tv.length)  entTV        = tv[0].data||[];
-    if(Array.isArray(b)&&b.length)    entBooks     = b[0].data||[];
-    if(Array.isArray(a)&&a.length)    entActivities= a[0].data||[];
+    // For entertainment, each table stores the full array as one row.
+    // Merge: keep whichever was updated more recently (local vs Supabase)
+    function mergeEntArr(supaResult, localArr, localTsKey) {
+      const localTs = S.get(localTsKey) || '0';
+      const supaTs  = Array.isArray(supaResult)&&supaResult.length ? supaResult[0].updated_at||'0' : '0';
+      const supaArr = Array.isArray(supaResult)&&supaResult.length ? supaResult[0].data||[] : null;
+      if(!supaArr) return localArr; // nothing in Supabase, keep local
+      if(localTs > supaTs) return localArr; // local is newer, keep it and push up
+      return supaArr; // Supabase is newer
+    }
+    const prevMovies     = entMovies;
+    const prevTV         = entTV;
+    const prevBooks      = entBooks;
+    const prevActivities = entActivities;
+    entMovies     = mergeEntArr(m,  prevMovies,     'lt3_ent_movies_ts');
+    entTV         = mergeEntArr(tv, prevTV,         'lt3_ent_tv_ts');
+    entBooks      = mergeEntArr(b,  prevBooks,      'lt3_ent_books_ts');
+    entActivities = mergeEntArr(a,  prevActivities, 'lt3_ent_activities_ts');
     S.set('lt3_ent_movies',entMovies); S.set('lt3_ent_tv',entTV);
     S.set('lt3_ent_books',entBooks); S.set('lt3_ent_activities',entActivities);
+    // Push local-only data back up if it was newer
+    const localMoviesTs = S.get('lt3_ent_movies_ts')||'0';
+    const supaMoviesTs  = Array.isArray(m)&&m.length?m[0].updated_at||'0':'0';
+    if(localMoviesTs > supaMoviesTs && prevMovies.length) syncEntTable('ent_movies', entMovies);
+    const localTVTs = S.get('lt3_ent_tv_ts')||'0';
+    const supaTVTs  = Array.isArray(tv)&&tv.length?tv[0].updated_at||'0':'0';
+    if(localTVTs > supaTVTs && prevTV.length) syncEntTable('ent_tv', entTV);
+    const localBooksTs = S.get('lt3_ent_books_ts')||'0';
+    const supaBooksTs  = Array.isArray(b)&&b.length?b[0].updated_at||'0':'0';
+    if(localBooksTs > supaBooksTs && prevBooks.length) syncEntTable('ent_books', entBooks);
+    const localActsTs = S.get('lt3_ent_activities_ts')||'0';
+    const supaActsTs  = Array.isArray(a)&&a.length?a[0].updated_at||'0':'0';
+    if(localActsTs > supaActsTs && prevActivities.length) syncEntTable('ent_activities', entActivities);
   } catch(e) { console.error('Ent load error',e); loadEntFromStorage(); }
 }
 
