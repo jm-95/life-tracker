@@ -809,24 +809,68 @@ async function loadFromSupabase() {
     const headers = await getAuthHeaders();
     const base = SUPA_URL + '/rest/v1';
     const [t,r,h,g,sl,um] = await Promise.all([
-      fetch(`${base}/tasks?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
-      fetch(`${base}/routines?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
-      fetch(`${base}/habits?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
-      fetch(`${base}/goals?select=id,data&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
-      fetch(`${base}/sleep_logs?select=data&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
-      fetch(`${base}/user_meta?select=data&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
+      fetch(`${base}/tasks?select=id,data,updated_at&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/routines?select=id,data,updated_at&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/habits?select=id,data,updated_at&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/goals?select=id,data,updated_at&user_id=eq.${uid}`, {headers}).then(x=>x.json()),
+      fetch(`${base}/sleep_logs?select=data,updated_at&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
+      fetch(`${base}/user_meta?select=data,updated_at&user_id=eq.${uid}&limit=1`, {headers}).then(x=>x.json()),
     ]);
-    console.log('Tasks:', Array.isArray(t)?t.length:'error', t?.message||'');
-    tasks    = Array.isArray(t) ? t.map(x=>x.data) : [];
-    routines = Array.isArray(r) ? r.map(x=>x.data) : [];
-    habits   = Array.isArray(h) ? h.map(x=>x.data) : [];
-    goals    = Array.isArray(g) ? g.map(x=>x.data) : [];
-    sleepLogs= Array.isArray(sl) && sl.length ? sl[0].data : {};
+    console.log('Tasks from Supabase:', Array.isArray(t)?t.length:'error', t?.message||'');
+
+    // Merge strategy: use Supabase data but preserve any local items
+    // that are newer (have local_updated_at > Supabase updated_at)
+    function mergeArrays(supaRows, localArr, localKey) {
+      const supaItems = Array.isArray(supaRows) ? supaRows.map(x=>x.data) : [];
+      if(!supaItems.length) return localArr; // nothing in Supabase, keep local
+      // Build map of local items by id with their local timestamp
+      const localMap = {};
+      (localArr||[]).forEach(item => { localMap[item.id] = item; });
+      const supaMap = {};
+      (Array.isArray(supaRows)?supaRows:[]).forEach(row => { supaMap[row.data.id] = {data:row.data, updated_at:row.updated_at}; });
+      // For each item: keep whichever was updated more recently
+      const allIds = new Set([...Object.keys(localMap), ...Object.keys(supaMap)]);
+      const merged = [];
+      allIds.forEach(id => {
+        const local = localMap[id];
+        const supa = supaMap[id];
+        if(!supa) { merged.push(local); } // only local — keep it, will sync up
+        else if(!local) { merged.push(supa.data); } // only Supabase
+        else {
+          const localTs = local._updated_at || '0';
+          const supaTs  = supa.updated_at   || '0';
+          merged.push(localTs > supaTs ? local : supa.data);
+        }
+      });
+      return merged;
+    }
+
+    const localTasks    = S.get('lt3_tasks')    || [];
+    const localRoutines = S.get('lt3_routines') || [];
+    const localHabits   = S.get('lt3_habits')   || [];
+    const localGoals    = S.get('lt3_goals')    || [];
+
+    tasks    = mergeArrays(t, localTasks,    'lt3_tasks');
+    routines = mergeArrays(r, localRoutines, 'lt3_routines');
+    habits   = mergeArrays(h, localHabits,   'lt3_habits');
+    goals    = mergeArrays(g, localGoals,    'lt3_goals');
+
+    // For sleep: compare timestamps, keep newer
+    const localSleep   = S.get('lt3_sleep') || {};
+    const localSleepTs = S.get('lt3_sleep_ts') || '0';
+    const supaSleep    = Array.isArray(sl) && sl.length ? sl[0] : null;
+    const supaSleepTs  = supaSleep?.updated_at || '0';
+    sleepLogs = localSleepTs > supaSleepTs ? localSleep : (supaSleep?.data || localSleep);
+
     const meta = Array.isArray(um) && um.length ? um[0].data : {};
     streak  = meta.streak  || 0;
     lastDay = meta.lastDay || '';
+
     goals.forEach(g=>{if(!g.logs)g.logs=[];});
     habits.forEach(h=>{if(!h.entries)h.entries=[];});
+    routines.forEach(r=>{if(!r.history)r.history=r.lastDone?[r.lastDone]:[];});
+
+    // Cache merged result
     S.set('lt3_tasks',tasks);
     S.set('lt3_routines',routines);
     S.set('lt3_habits',habits);
@@ -834,7 +878,19 @@ async function loadFromSupabase() {
     S.set('lt3_sleep',sleepLogs);
     S.set('lt3_streak',streak);
     S.set('lt3_lastday',lastDay);
-    console.log('Load complete — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
+
+    // Push any local-only items back up to Supabase
+    const localOnlyTasks    = tasks.filter(x=>!Array.isArray(t)||!t.find(r=>r.data.id===x.id));
+    const localOnlyRoutines = routines.filter(x=>!Array.isArray(r)||!r.find(row=>row.data.id===x.id));
+    const localOnlyHabits   = habits.filter(x=>!Array.isArray(h)||!h.find(row=>row.data.id===x.id));
+    const localOnlyGoals    = goals.filter(x=>!Array.isArray(g)||!g.find(row=>row.data.id===x.id));
+    if(localOnlyTasks.length)    saveTasksDB();
+    if(localOnlyRoutines.length) saveRoutinesDB();
+    if(localOnlyHabits.length)   saveHabitsDB();
+    if(localOnlyGoals.length)    saveGoalsDB();
+    if(localSleepTs > supaSleepTs) saveSleepDB();
+
+    console.log('Load+merge complete — tasks:',tasks.length,'routines:',routines.length,'habits:',habits.length,'goals:',goals.length);
   } catch(e) {
     console.error('Load error:', e.message);
     tasks    = S.get('lt3_tasks')    || [];
@@ -903,19 +959,31 @@ async function dbDelete(table, filter) {
 
 // ── OVERRIDE SAVE FUNCTIONS TO SYNC ───────────────────────
 function saveAndSync(localKey, arr, table) {
+  const now = new Date().toISOString();
+  // Stamp each item with local update time for merge conflict resolution
+  arr.forEach(x=>{ x._updated_at = now; });
   S.set(localKey, arr);
   if (!currentUser) return;
   const uid = currentUser.id;
-  const now = new Date().toISOString();
   showSync('⟳ Saving...');
-  dbUpsert(table, arr.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now})))
-    .then(()=>hideSync()).catch(e=>{console.error(e);hideSync();});
+  getAuthHeaders().then(headers => {
+    const body = arr.map(x=>({id:x.id,user_id:uid,data:x,updated_at:now}));
+    return fetch(`${SUPA_URL}/rest/v1/${table}`, {
+      method:'POST', headers, body:JSON.stringify(body)
+    });
+  }).then(r=>{ if(!r.ok) console.error('Save failed',table,r.status); hideSync(); })
+    .catch(e=>{console.error('Save error',e);hideSync();});
 }
 function saveTasksDB()    { saveAndSync('lt3_tasks',tasks,'tasks'); }
 function saveRoutinesDB() { saveAndSync('lt3_routines',routines,'routines'); }
 function saveHabitsDB()   { saveAndSync('lt3_habits',habits,'habits'); }
 function saveGoalsDB()    { saveAndSync('lt3_goals',goals,'goals'); }
-function saveSleepDB()    { S.set('lt3_sleep',sleepLogs); syncSleep(); }
+function saveSleepDB()    {
+  const now = new Date().toISOString();
+  S.set('lt3_sleep',sleepLogs);
+  S.set('lt3_sleep_ts', now); // track when sleep was last saved locally
+  syncSleep();
+}
 function saveMetaDB()     { S.set('lt3_streak',streak); S.set('lt3_lastday',lastDay); syncMeta(); }
 
 // ── AUTH ──────────────────────────────────────────────────
