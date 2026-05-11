@@ -1059,7 +1059,8 @@ function showPage(name) {
 function showSettings() { renderStorageInfo(); document.getElementById('settings-overlay').classList.add('open'); }
 function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
 function exportData() {
-  const data = { tasks, routines, habits, goals, streak, lastDay, sleepLogs, exportedAt: nowISO() };
+  const data = { tasks, routines, habits, goals, streak, lastDay, sleepLogs,
+    entMovies, entTV, entBooks, entActivities, exportedAt: nowISO() };
   const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1081,8 +1082,21 @@ function importData(input) {
         streak   = data.streak   || 0;
         lastDay  = data.lastDay  || '';
         sleepLogs= data.sleepLogs|| {};
+        entMovies    = data.entMovies    || [];
+        entTV        = data.entTV        || [];
+        entBooks     = data.entBooks     || [];
+        entActivities= data.entActivities|| [];
         // Sync everything to Supabase
         await syncAllToSupabase({tasks,routines,habits,goals,sleepLogs,streak,lastDay});
+        // Sync entertainment
+        await Promise.all([
+          syncEntTable('ent_movies',    entMovies),
+          syncEntTable('ent_tv',        entTV),
+          syncEntTable('ent_books',     entBooks),
+          syncEntTable('ent_activities',entActivities),
+        ]);
+        S.set('lt3_ent_movies',entMovies); S.set('lt3_ent_tv',entTV);
+        S.set('lt3_ent_books',entBooks); S.set('lt3_ent_activities',entActivities);
         closeSettings(); renderDashboard(); toast('Data imported ✓');
       },'Import','btn-accent');
     } catch(err) { toast('Invalid backup file'); }
@@ -1092,9 +1106,10 @@ function importData(input) {
 }
 function confirmClearAll() {
   openModal('Clear all data?','This permanently deletes everything. This cannot be undone.',async ()=>{
-    ['lt3_tasks','lt3_routines','lt3_habits','lt3_goals','lt3_streak','lt3_lastday','lt3_sleep'].forEach(k=>localStorage.removeItem(k));
+    ['lt3_tasks','lt3_routines','lt3_habits','lt3_goals','lt3_streak','lt3_lastday','lt3_sleep',
+     'lt3_ent_movies','lt3_ent_tv','lt3_ent_books','lt3_ent_activities'].forEach(k=>localStorage.removeItem(k));
     tasks=[];routines=[];habits=[];goals=[];streak=0;lastDay='';sleepLogs={};
-    // Clear from Supabase too
+    entMovies=[];entTV=[];entBooks=[];entActivities=[];
     if(currentUser){
       const uid=currentUser.id;
       await Promise.all([
@@ -1104,6 +1119,10 @@ function confirmClearAll() {
         dbDelete('goals',{user_id:uid}),
         dbDelete('sleep_logs',{user_id:uid}),
         dbDelete('user_meta',{user_id:uid}),
+        dbDelete('ent_movies',{user_id:uid}),
+        dbDelete('ent_tv',{user_id:uid}),
+        dbDelete('ent_books',{user_id:uid}),
+        dbDelete('ent_activities',{user_id:uid}),
       ]);
     }
     closeSettings(); renderDashboard(); toast('All data cleared');
